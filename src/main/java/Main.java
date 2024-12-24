@@ -2,10 +2,8 @@ import com.amazonaws.auth.AWSCredentialsProvider;
 import com.amazonaws.auth.profile.ProfileCredentialsProvider;
 import com.amazonaws.services.ec2.AmazonEC2;
 import com.amazonaws.services.ec2.AmazonEC2ClientBuilder;
-import com.amazonaws.services.ec2.model.InstanceType;
 import com.amazonaws.services.elasticmapreduce.AmazonElasticMapReduce;
 import com.amazonaws.services.elasticmapreduce.AmazonElasticMapReduceClientBuilder;
-import com.amazonaws.services.elasticmapreduce.model.*;
 import com.amazonaws.services.s3.AmazonS3;
 import com.amazonaws.services.s3.AmazonS3ClientBuilder;
 import org.apache.hadoop.conf.Configuration;
@@ -42,93 +40,133 @@ public class Main {
     }
 
     public static void main(String[] args) throws Exception {
-        if (args.length < 3) {
-            System.err.println("Usage: Main <input path> <output path> <stopwords path>");
-            System.exit(-1);
-        }
-
-        // AWS Service Initialization
+        // Initialize AWS clients
         initializeAWS();
 
-        // Input and Output paths
-        String inputPath = args[0];
-        String outputPath = args[1];
-        String stopWordsPath = args[2];
+        // Hardcoded paths for input, output, and stopwords file
+        String input1GramPath = "s3://datasets.elasticmapreduce/ngrams/books/20090715/heb-all/1gram/data";
+        String input2GramPath = "s3://datasets.elasticmapreduce/ngrams/books/20090715/heb-all/2gram/data";
+        String input3GramPath = "s3://datasets.elasticmapreduce/ngrams/books/20090715/heb-all/3gram/data";
+        String outputBasePath = "src/output";
+        String stopWordsPath = "src/resource/heb-stopwords.txt";
 
-        // Hadoop Job Configuration
-        boolean success1 = runJob("1-gram processing", Step1gram.class, inputPath, outputPath + "/1gram", stopWordsPath);
-        if (!success1) {
+        boolean success;
+
+        // Step 1: Process 1-grams
+        success = runJob("1-gram processing",
+                Step1gram.class,
+                input1GramPath,
+                outputBasePath + "/1gram",
+                stopWordsPath);
+        if (!success) {
             System.err.println("1-gram processing failed.");
             System.exit(1);
         }
 
-        boolean success2 = runJob("2-gram processing", Step2gram.class, inputPath, outputPath + "/2gram", stopWordsPath);
-        if (!success2) {
+        // Step 2: Process 2-grams
+        success = runJob("2-gram processing",
+                Step2gram.class,
+                input2GramPath,
+                outputBasePath + "/2gram",
+                stopWordsPath);
+        if (!success) {
             System.err.println("2-gram processing failed.");
             System.exit(1);
         }
 
-        boolean success3 = runJob("3-gram processing", Step3gram.class, inputPath, outputPath + "/3gram", stopWordsPath);
-        if (!success3) {
+        // Step 3: Process 3-grams
+        success = runJob("3-gram processing",
+                Step3gram.class,
+                input3GramPath,
+                outputBasePath + "/3gram",
+                stopWordsPath);
+        if (!success) {
             System.err.println("3-gram processing failed.");
+            System.exit(1);
+        }
+
+        // Step 4: Calculate Conditional Probabilities P(w3 | w1, w2)
+        success = runProbabilityCalculationJob(
+                "Conditional Probability Calculation",
+                outputBasePath + "/1gram",
+                outputBasePath + "/2gram",
+                outputBasePath + "/3gram",
+                outputBasePath + "/conditional_probabilities");
+        if (!success) {
+            System.err.println("Conditional probability calculation failed.");
             System.exit(1);
         }
 
         System.out.println("All jobs completed successfully.");
     }
 
+    /**
+     * Initialize AWS clients for S3, EC2, and EMR.
+     */
     private static void initializeAWS() {
-        // AWS Credentials
+        // AWS Credentials (default profile or environment variables)
         credentialsProvider = new ProfileCredentialsProvider("default");
 
-        // S3 Client
+        // S3 Client: To interact with Amazon S3
         s3 = AmazonS3ClientBuilder.standard()
                 .withCredentials(credentialsProvider)
                 .withRegion("us-east-1")
                 .build();
 
-        // EC2 Client
+        // EC2 Client: To manage EC2 instances
         ec2 = AmazonEC2ClientBuilder.standard()
                 .withCredentials(credentialsProvider)
                 .withRegion("us-east-1")
                 .build();
 
-        // EMR Client
+        // EMR Client: To manage EMR clusters
         emr = AmazonElasticMapReduceClientBuilder.standard()
                 .withCredentials(credentialsProvider)
                 .withRegion("us-east-1")
                 .build();
     }
 
+    /**
+     * Run a Hadoop job for 1-gram, 2-gram, or 3-gram processing.
+     */
     private static boolean runJob(String jobName, Class<?> jobClass, String inputPath, String outputPath, String stopWordsPath) throws Exception {
         Configuration conf = new Configuration();
-        conf.set("stopwords.path", stopWordsPath);
+        conf.set("stopwords.path", stopWordsPath); // Pass the stopwords path to the configuration
 
         Job job = Job.getInstance(conf, jobName);
         job.setJarByClass(jobClass);
-
-        // Set Mapper, Reducer, and Partitioner based on the job class
-        if (jobClass == Step1gram.class) {
-            job.setMapperClass(Step1gram.Map.class);
-            job.setReducerClass(Step1gram.Reduce.class);
-            job.setPartitionerClass(Step1gram.Partition.class);
-        } else if (jobClass == Step2gram.class) {
-            job.setMapperClass(Step2gram.Map.class);
-            job.setReducerClass(Step2gram.Reduce.class);
-            job.setPartitionerClass(Step2gram.Partition.class);
-        } else if (jobClass == Step3gram.class) {
-            job.setMapperClass(Step3gram.Map.class);
-            job.setReducerClass(Step3gram.Reduce.class);
-            job.setPartitionerClass(Step3gram.Partition.class);
-        } else {
-            throw new IllegalArgumentException("Unsupported job class: " + jobClass.getName());
-        }
 
         job.setOutputKeyClass(Text.class);
         job.setOutputValueClass(Text.class);
 
         // Set Input and Output paths
         FileInputFormat.addInputPath(job, new Path(inputPath));
+        FileOutputFormat.setOutputPath(job, new Path(outputPath));
+
+        // Run the job
+        return job.waitForCompletion(true);
+    }
+
+    /**
+     * Run the final Hadoop job to calculate conditional probabilities.
+     */
+    private static boolean runProbabilityCalculationJob(String jobName, String input1GramPath, String input2GramPath, String input3GramPath, String outputPath) throws Exception {
+        Configuration conf = new Configuration();
+        conf.set("input1gram.path", input1GramPath);
+        conf.set("input2gram.path", input2GramPath);
+        conf.set("input3gram.path", input3GramPath);
+
+        Job job = Job.getInstance(conf, jobName);
+        job.setJarByClass(ConditionalProbabilityCalculator.class);
+
+        job.setMapperClass(ConditionalProbabilityCalculator.Map.class);
+        job.setReducerClass(ConditionalProbabilityCalculator.Reduce.class);
+
+        job.setOutputKeyClass(Text.class);
+        job.setOutputValueClass(Text.class);
+
+        // Set Input and Output paths
+        FileInputFormat.addInputPath(job, new Path(input3GramPath));
         FileOutputFormat.setOutputPath(job, new Path(outputPath));
 
         // Run the job
