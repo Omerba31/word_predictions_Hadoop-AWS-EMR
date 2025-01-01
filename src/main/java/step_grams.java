@@ -97,4 +97,42 @@ public class StepGrams {
             return (key.hashCode() & Integer.MAX_VALUE) % numPartitions;
         }
     }
+
+    /**
+     * Comparator class:
+     * Custom comparator to sort n-grams based on placeholder order and lexical order.
+     */
+    public static class NGramComparator extends WritableComparator {
+        protected NGramComparator() {
+            super(Text.class, true);
+        }
+
+        @Override
+        public int compare(WritableComparable a, WritableComparable b) {
+            String key1 = a.toString();
+            String key2 = b.toString();
+
+            // Extract the structure: number of placeholders and word content
+            int score1 = calculateScore(key1);
+            int score2 = calculateScore(key2);
+
+            if (score1 != score2) {
+                return Integer.compare(score1, score2); // Lower score comes first
+            }
+
+            // If scores are equal, compare lexically
+            return key1.compareTo(key2);
+        }
+
+        private int calculateScore(String key) {
+            String[] parts = key.replaceAll("[<>,]", "").split(" ");
+            int score = 0;
+            for (String part : parts) {
+                if ("**".equals(part)) {
+                    score++; // Higher score for placeholders
+                }
+            }
+            return score;
+        }
+    }
 }
