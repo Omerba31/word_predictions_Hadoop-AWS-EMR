@@ -1,86 +1,78 @@
+import org.apache.hadoop.io.LongWritable;
 import org.apache.hadoop.io.Text;
 import org.apache.hadoop.mapreduce.Mapper;
 import org.apache.hadoop.mapreduce.Reducer;
 
-import java.io.BufferedReader;
 import java.io.IOException;
-import java.io.InputStreamReader;
-import java.util.HashMap;
-import org.apache.hadoop.fs.FileSystem;
-import org.apache.hadoop.fs.Path;
-import org.apache.hadoop.conf.Configuration;
 
 public class ConditionalProbabilityCalculator {
 
-    public static class Map extends Mapper<Object, Text, Text, Text> {
+    /**
+     * Mapper class:
+     * Prepares data for joining and further computation.
+     */
+    public static class Map extends Mapper<LongWritable, Text, Text, Text> {
 
         @Override
-        protected void map(Object key, Text value, Context context) throws IOException, InterruptedException {
-            String[] fields = value.toString().split("\\t");
-            if (fields.length < 2) return;
+        protected void map(LongWritable key, Text value, Context context) throws IOException, InterruptedException {
+            String[] fields = value.toString().split("\t");
+            String nGram = fields[0].trim(); // Entire n-gram
+            String occurrences = fields[1].trim(); // Count of the n-gram
+            String[] words = nGram.split(" "); // Split n-gram into individual words
 
-            String threeGram = fields[0]; // w1 w2 w3
-            long count = Long.parseLong(fields[1]);
-
-            String[] words = threeGram.split(" ");
-            if (words.length == 3) {
-                String twoGram = words[0] + " " + words[1]; // Extract w1 w2
-                context.write(new Text(twoGram), new Text(words[2] + "\\t" + count)); // Emit w1 w2 as key, w3 and count as value
+            if (words.length == 1) {
+                // For 1-gram
+                context.write(new Text(words[0]), new Text("N1=" + occurrences));
+                // Emit C0 for total word occurrences
+                context.write(new Text("C0"), new Text("C0=" + occurrences));
+            } else if (words.length == 2) {
+                // For 2-gram
+                context.write(new Text(words[1]), new Text("N2=" + occurrences));
+                context.write(new Text(words[0] + " " + words[1]), new Text("C1=" + occurrences));
+            } else if (words.length == 3) {
+                // For 3-gram
+                context.write(new Text(words[2]), new Text("N3=" + occurrences));
+                context.write(new Text(words[1] + " " + words[2]), new Text("C2=" + occurrences));
             }
         }
     }
 
+    /**
+     * Reducer class:
+     * Joins data and calculates the conditional probabilities.
+     */
     public static class Reduce extends Reducer<Text, Text, Text, Text> {
-        private HashMap<String, Long> oneGramCounts = new HashMap<>();
-        private HashMap<String, Long> twoGramCounts = new HashMap<>();
-        private long totalWords;
-
-        @Override
-        protected void setup(Context context) throws IOException {
-            Configuration conf = context.getConfiguration();
-            String input1GramPath = conf.get("input1gram.path");
-            String input2GramPath = conf.get("input2gram.path");
-
-            oneGramCounts = loadCounts(input1GramPath);
-            twoGramCounts = loadCounts(input2GramPath);
-            totalWords = oneGramCounts.values().stream().mapToLong(value -> value).sum();
-        }
-
-        private HashMap<String, Long> loadCounts(String path) throws IOException {
-            HashMap<String, Long> counts = new HashMap<>();
-            FileSystem fs = FileSystem.get(new Configuration());
-            try (BufferedReader br = new BufferedReader(new InputStreamReader(fs.open(new Path(path))))) {
-                String line;
-                while ((line = br.readLine()) != null) {
-                    String[] parts = line.split("\\t");
-                    if (parts.length == 2) {
-                        counts.put(parts[0], Long.parseLong(parts[1]));
-                    }
-                }
-            }
-            return counts;
-        }
 
         @Override
         protected void reduce(Text key, Iterable<Text> values, Context context) throws IOException, InterruptedException {
-            String twoGram = key.toString();
-            long twoGramCount = twoGramCounts.getOrDefault(twoGram, 1L); // N2
+            long N1 = 0, N2 = 0, N3 = 0, C0 = 0, C1 = 0, C2 = 0;
 
             for (Text value : values) {
-                String[] fields = value.toString().split("\\t");
-                String w3 = fields[0];
-                long threeGramCount = Long.parseLong(fields[1]); // N3
-                long w3Count = oneGramCounts.getOrDefault(w3, 1L); // N1
+                String[] parts = value.toString().split("=");
+                String type = parts[0];
+                long count = Long.parseLong(parts[1]);
 
-                double k2 = (Math.log(twoGramCount + 1) + 1) / (Math.log(twoGramCount + 1) + 2);
-                double k3 = (Math.log(threeGramCount + 1) + 1) / (Math.log(threeGramCount + 1) + 2);
-
-                double probability = k3 * ((double) threeGramCount / twoGramCount)
-                        + (1 - k3) * k2 * ((double) twoGramCount / totalWords)
-                        + (1 - k3) * (1 - k2) * ((double) w3Count / totalWords);
-
-                context.write(new Text(twoGram + " " + w3), new Text(String.valueOf(probability)));
+                switch (type) {
+                    case "N1": N1 += count; break;
+                    case "N2": N2 += count; break;
+                    case "N3": N3 += count; break;
+                    case "C0": C0 += count; break;
+                    case "C1": C1 += count; break;
+                    case "C2": C2 += count; break;
+                }
             }
+
+            // Compute smoothing factors
+            double k2 = Math.log(N2 + 1.0) / (Math.log(N2 + 1.0) + 0.5);
+            double k3 = Math.log(N3 + 1.0) / (Math.log(N3 + 1.0) + 2.0);
+
+            // Calculate conditional probability
+            double probability = k3 * (N3 / (double) C2) +
+                    (1 - k3) * k2 * (N2 / (double) C1) +
+                    (1 - k3) * (1 - k2) * (N1 / (double) C0);
+
+            // Emit the result
+            context.write(key, new Text(Double.toString(probability)));
         }
     }
 }
