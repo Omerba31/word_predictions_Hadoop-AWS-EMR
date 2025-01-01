@@ -1,48 +1,114 @@
+import com.amazonaws.auth.AWSCredentialsProvider;
+import com.amazonaws.auth.profile.ProfileCredentialsProvider;
+import com.amazonaws.services.s3.AmazonS3;
+import com.amazonaws.services.s3.AmazonS3ClientBuilder;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.io.LongWritable;
+import org.apache.hadoop.io.Text;
 import org.apache.hadoop.mapreduce.Job;
 import org.apache.hadoop.mapreduce.lib.input.FileInputFormat;
 import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
 
+import java.util.HashMap;
+
 public class Main {
 
+    public static AWSCredentialsProvider credentialsProvider;
+    public static AmazonS3 s3;
+
+    // Permanent paths for input and output
+    private static final String INPUT_1GRAM_PATH = "s3://datasets.elasticmapreduce/ngrams/books/20090715/heb-all/1gram/data";
+    private static final String INPUT_2GRAM_PATH = "s3://datasets.elasticmapreduce/ngrams/books/20090715/heb-all/2gram/data";
+    private static final String INPUT_3GRAM_PATH = "s3://datasets.elasticmapreduce/ngrams/books/20090715/heb-all/3gram/data";
+    private static final String OUTPUT_STEP1_PATH = "src/output/step1";
+    private static final String OUTPUT_STEP2_PATH = "src/output/step2";
+    private static final String STOPWORDS_PATH = "src/resource/heb-stopwords.txt";
+
     public static void main(String[] args) throws Exception {
-        if (args.length < 3) {
-            System.err.println("Usage: Main <input_path> <output_path_step1> <output_path_step2>");
-            System.exit(-1);
-        }
+        // Initialize AWS if needed
+        initializeAWS();
 
-        Configuration conf = new Configuration();
-
-        // Step 1: Process n-grams and compute counts (1-grams, 2-grams, 3-grams)
-        Job job1 = Job.getInstance(conf, "Step 1: N-Gram Count");
-        job1.setJarByClass(Main.class);
-        job1.setMapperClass(StepGrams.Map.class);
-        job1.setReducerClass(StepGrams.Reduce.class);
-        job1.setPartitionerClass(StepGrams.Partition.class);
-
-        job1.setOutputKeyClass(Text.class);
-        job1.setOutputValueClass(Text.class);
-
-        FileInputFormat.addInputPath(job1, new Path(args[0]));
-        FileOutputFormat.setOutputPath(job1, new Path(args[1]));
-
-        if (!job1.waitForCompletion(true)) {
+        // Step 1: Process N-Grams
+        boolean success = runJob(
+                "N-Gram Processing",
+                ConditionalProbabilityCalculator.class,
+                new String[]{INPUT_1GRAM_PATH, INPUT_2GRAM_PATH, INPUT_3GRAM_PATH},
+                OUTPUT_STEP1_PATH,
+                STOPWORDS_PATH
+        );
+        if (!success) {
+            System.err.println("N-Gram processing failed.");
             System.exit(1);
         }
 
-        // Step 2: Calculate conditional probabilities using the ConditionalProbabilityCalculator
-        Job job2 = Job.getInstance(conf, "Step 2: Conditional Probability Calculation");
-        job2.setJarByClass(Main.class);
-        job2.setMapperClass(ConditionalProbabilityCalculator.Map.class);
-        job2.setReducerClass(ConditionalProbabilityCalculator.Reduce.class);
+        // Step 2: Calculate Conditional Probabilities
+        success = runProbabilityCalculationJob(
+                "Conditional Probability Calculation",
+                OUTPUT_STEP1_PATH,
+                OUTPUT_STEP2_PATH
+        );
+        if (!success) {
+            System.err.println("Conditional probability calculation failed.");
+            System.exit(1);
+        }
 
-        job2.setOutputKeyClass(Text.class);
-        job2.setOutputValueClass(Text.class);
+        System.out.println("All jobs completed successfully.");
+    }
 
-        FileInputFormat.addInputPath(job2, new Path(args[1]));
-        FileOutputFormat.setOutputPath(job2, new Path(args[2]));
+    /**
+     * Initialize AWS clients for S3.
+     */
+    private static void initializeAWS() {
+        credentialsProvider = new ProfileCredentialsProvider("default");
+        s3 = AmazonS3ClientBuilder.standard()
+                .withCredentials(credentialsProvider)
+                .withRegion("us-east-1")
+                .build();
+    }
 
-        System.exit(job2.waitForCompletion(true) ? 0 : 1);
+    /**
+     * Run a Hadoop job for N-Gram processing.
+     */
+    private static boolean runJob(String jobName, Class<?> jobClass, String[] inputPaths, String outputPath, String stopWordsPath) throws Exception {
+        Configuration conf = new Configuration();
+        conf.set("stopwords.path", stopWordsPath);
+
+        Job job = Job.getInstance(conf, jobName);
+        job.setJarByClass(jobClass);
+
+        job.setOutputKeyClass(Text.class);
+        job.setOutputValueClass(Text.class);
+
+        // Add multiple input paths
+        for (String inputPath : inputPaths) {
+            FileInputFormat.addInputPath(job, new Path(inputPath));
+        }
+
+        FileOutputFormat.setOutputPath(job, new Path(outputPath));
+
+        return job.waitForCompletion(true);
+    }
+
+    /**
+     * Run the final Hadoop job to calculate conditional probabilities.
+     */
+    private static boolean runProbabilityCalculationJob(String jobName, String inputPath, String outputPath) throws Exception {
+        Configuration conf = new Configuration();
+        conf.set("input.path", inputPath);
+
+        Job job = Job.getInstance(conf, jobName);
+        job.setJarByClass(ConditionalProbabilityCalculator.class);
+
+        job.setMapperClass(ConditionalProbabilityCalculator.Map.class);
+        job.setReducerClass(ConditionalProbabilityCalculator.Reduce.class);
+
+        job.setOutputKeyClass(Text.class);
+        job.setOutputValueClass(Text.class);
+
+        FileInputFormat.addInputPath(job, new Path(inputPath));
+        FileOutputFormat.setOutputPath(job, new Path(outputPath));
+
+        return job.waitForCompletion(true);
     }
 }
