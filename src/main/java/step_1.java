@@ -10,9 +10,10 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.util.HashMap;
+import java.util.Objects;
 
 
-public class step_grams {
+public class step_1 {
 
     public static void generateStopWord(Mapper<LongWritable, Text, Text, Text>.Context context, HashMap<String, Integer> stopWords) throws IOException {
         Path stopWordsPath = new Path("src/resource/heb-stopwords.txt");
@@ -67,33 +68,33 @@ public class step_grams {
                 if (words.length == 1) {
 
                     // C0
-                    keyString1 = "<, **, **>";
+                    keyString1 = "<**,**,**>";
                     context.write(new Text(keyString1), new Text(occurrences));
 
                     // C1
-                    keyString2 = "<, " + words[0] + ", **>";
+                    keyString2 = "<**," + words[0] + ",**>";
                     context.write(new Text(keyString2), new Text(occurrences));
 
                     // N1
-                    keyString3 = "<, **, " + words[0] + ">";
+                    keyString3 = "<**, **," + words[0] + ">";
                     context.write(new Text(keyString3), new Text(occurrences));
 
                 } // 2-gram
                 else if (words.length == 2) {
 
                     // C2
-                    keyString1 = "<" + words[0] + ", " + words[1] + ", **>";
+                    keyString1 = "<" + words[0] + "," + words[1] + ",**>";
                     context.write(new Text(keyString1), new Text(occurrences));
 
                     // N2
-                    keyString2 = "<, " + words[0] + ", " + words[1] + ">";
+                    keyString2 = "<**," + words[0] + "," + words[1] + ">";
                     context.write(new Text(keyString2), new Text(occurrences));
 
                 } // 3-gram
                 else {
 
                     // N3
-                    keyString1 = "<" + words[0] + ", " + words[1] + ", " + words[2] + ">";
+                    keyString1 = "<" + words[0] + "," + words[1] + "," + words[2] + ">";
                     context.write(new Text(keyString1), new Text(occurrences));
                 }
             }
@@ -125,29 +126,29 @@ public class step_grams {
                     try {
                         long occurrences = Long.parseLong(value.toString());
 
-                        if (keyString.equals("<, **, **>")) {
+                        if (keyString.equals("<**,**,**>")) {
                             c0_Occurrences += occurrences;
                             // C0 case, sum occurrences based on the whole n-gram
 
                         } else if (keyWords.length == 3) { // Handle cases for 3-grams
 
-                            if (keyWords[0].isEmpty() && !keyWords[1].isEmpty() && keyWords[2].isEmpty()) {
+                            if (keyWords[0].equals("**") && !keyWords[1].equals("**") && keyWords[2].equals("**")) {
                                 c1_Occurrences += occurrences;
                                 // C1 case, sum occurrences based on the second word
 
-                            } else if (keyWords[0].isEmpty() && keyWords[1].isEmpty() && !keyWords[2].isEmpty()) {
+                            } else if (keyWords[0].equals("**") && keyWords[1].equals("**") && !keyWords[2].equals("**")) {
                                 n1_Occurrences += occurrences;
                                 // N1 case, sum occurrences based on the third word
 
-                            } else if (!keyWords[0].isEmpty() && !keyWords[1].isEmpty() && keyWords[2].isEmpty()) {
+                            } else if (!keyWords[0].equals("**") && !keyWords[1].equals("**") && keyWords[2].equals("**")) {
                                 c2_Occurrences += occurrences;
                                 // C2 case, sum occurrences based on the first pair words
 
-                            } else if (keyWords[0].isEmpty() && !keyWords[1].isEmpty() && !keyWords[2].isEmpty()) {
+                            } else if (keyWords[0].equals("**") && !keyWords[1].equals("**") && !keyWords[2].equals("**")) {
                                 n2_Occurrences += occurrences;
                                 // N2 case, sum occurrences based on the second pair words
 
-                            } else if (!keyWords[0].isEmpty() && !keyWords[1].isEmpty() && !keyWords[2].isEmpty()) { //CHANGED: added !
+                            } else if (!keyWords[0].equals("**") && !keyWords[1].equals("**") && !keyWords[2].equals("**")) {
                                 // N3 case, sum occurrences based on the trigram words
                                 n3_Occurrences += occurrences;
                                 outPutKeyString = keyString; //Save the trigram key for output key
@@ -159,21 +160,24 @@ public class step_grams {
                 }
 
                 // For C0, return the sum of occurrences as a single output value
-                if (keyString.equals("<, **, **>")) {
-                    context.write(key, new Text("sum=" + c0_Occurrences));
+                if (keyString.equals("<**, **, **>")) {
+                    context.write(key, new Text(String.valueOf(c0_Occurrences)));
                 }
-                // For N2, C1, C2, N3, return the sum of occurrences per variable
-                else if (n1_Occurrences == 0) {
-                    String outputValue = "C1 occurrences=" + c1_Occurrences +
-                            ", C2 occurrences=" + c2_Occurrences +
-                            ", N2 occurrences=" + n2_Occurrences +
-                            ", N3 occurrences=" + n3_Occurrences;
+
+                // For C1, C2, N2, N3, return the sum of occurrences per variable
+                else if (n1_Occurrences == 0) { //
+                    String outputValue =
+                            "C1 occurrences=" + c1_Occurrences + ", " +
+                                    "C2 occurrences=" + c2_Occurrences + ", " +
+                                    "N2 occurrences=" + n2_Occurrences + ", " +
+                                    "N3 occurrences=" + n3_Occurrences;
 
                     context.write(new Text(outPutKeyString), new Text(outputValue));
                 }
+
                 // For N1, return the sum of occurrences as a single output value
                 else {
-                    context.write(key, new Text("sum=" + n1_Occurrences));
+                    context.write(key, new Text(String.valueOf(n1_Occurrences)));
                 }
             }
         }
@@ -188,22 +192,22 @@ public class step_grams {
             @Override
             public int getPartition(Text key, Text value, int numPartitions) {
                 String keyStr = key.toString();
-                String[] parts = keyStr.split(", ");
+                String[] parts = keyStr.split(",\\s*"); // Split key into parts
 
                 // For C0, send it to partition 0 (same reducer for all C0)
-                if (keyStr.equals("<, **, **>")) {
+                if (keyStr.equals("<**,**,**>")) {
                     return 0; // Always send C0 to partition 0
                 }
 
                 // For N1: Partition based on the third word when the second word is **
-                if (parts.length == 3 && parts[1].isEmpty()) {
+                if (parts.length == 3 && Objects.equals(parts[1], "**")) {
                     // Extract the third word (since the second part is **)
                     String thirdWord = parts[2].replaceAll("[<>]", "").trim();
                     return (thirdWord.hashCode() & Integer.MAX_VALUE) % numPartitions;
                 }
 
-                // For N2, C1, C2, N3: Partition based on the second word if it's not **
-                if (parts.length == 3 && !parts[1].isEmpty()) {
+                // For C1, C2,N2, N3: Partition based on the second word if it's not **
+                if (parts.length == 3 && !Objects.equals(parts[1], "**")) {
                     // Extract the second word
                     String secondWord = parts[1].replaceAll("[<>]", "").trim();
                     return (secondWord.hashCode() & Integer.MAX_VALUE) % numPartitions;
