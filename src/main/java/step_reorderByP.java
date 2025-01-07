@@ -38,7 +38,6 @@ public class Step4 {
                 context.write(key, values.iterator().next());
             }
         }
-
     }
 
     public static class Partition extends Partitioner<Text, Text> {
@@ -55,16 +54,21 @@ public class Step4 {
         }
 
         @Override
-        public int compare(WritableComparable key1, WritableComparable key2) { // key: w1 w2 w3 probability
-            String[] words1 = key1.toString().split(" ");
-            String[] words2 = key2.toString().split(" ");
-            if (words1[0].equals(words2[0]) && words1[1].equals(words2[1])) {
-                if (Double.parseDouble(words1[3]) >= (Double.parseDouble(words2[3]))) {
-                    return -1;
-                } else
-                    return 1;
+        public int compare(WritableComparable key1, WritableComparable key2) {
+            // Extract components: <w1,w2,w3>
+            String[] parts1 = key1.toString().substring(1, key1.toString().length() - 1).split(",");
+            String[] parts2 = key2.toString().substring(1, key2.toString().length() - 1).split(",");
+
+            // Compare w1,w2 lexicographically
+            int cmp = (parts1[0] + "," + parts1[1]).compareTo(parts2[0] + "," + parts2[1]);
+            if (cmp != 0) {
+                return cmp; // If w1,w2 differ, sort lexicographically
             }
-            return String.format("%s %s", words1[0], words1[1]).compareTo(String.format("%s %s", words2[0], words2[1]));
+
+            // If w1,w2 are the same, compare probabilities descending
+            double prob1 = Double.parseDouble(parts1[2]);
+            double prob2 = Double.parseDouble(parts2[2]);
+            return Double.compare(prob2, prob1);
         }
     }
 

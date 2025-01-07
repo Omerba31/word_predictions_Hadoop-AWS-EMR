@@ -67,7 +67,8 @@ public class Step_N1andCalculateProbabilities {
             long N2 = Long.parseLong(iterator.next().toString());
             long N3 = Long.parseLong(iterator.next().toString());
 
-            long C0 = 1;  // Total words in corpus, C0, TODO: get this from s3
+            long C0 = 1;  // Total words in corpus, C0
+            //TODO: get this from s3
 
             // Calculate weights k2 and k3
             double k2 = (Math.log(N2 + 1) + 1) / (Math.log(N2 + 1) + 2);  // k2 = log(N2 + 1) + 1 / (log(N2 + 1) + 2)
