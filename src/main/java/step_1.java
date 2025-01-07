@@ -10,7 +10,6 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.util.HashMap;
-import java.util.Objects;
 
 
 public class step_1 {
@@ -63,7 +62,7 @@ public class step_1 {
             if (!containsStopWord) {
                 // Construct keys based on n-gram length
                 String keyString;
-                String totalOccurrences = "<**>";
+                String totalOccurrences = "<>";
                 // 1-gram
                 if (words.length == 1) {
                     // C1 and N1
@@ -87,7 +86,7 @@ public class step_1 {
                 else {
                     // N3
                     //Flip the order so it will send to the same reducer and add * in order it come after all the other to the reducer.
-                    keyString = String.format("<%s, %s, %s, **>", words[1], words[0], words[2]);
+                    keyString = String.format("<%s, **, %s, %s>", words[1], words[0], words[2]);
                     context.write(new Text(keyString), new Text(occurrences));
                 }
             }
@@ -99,78 +98,90 @@ public class step_1 {
          */
 
         public static class Reduce extends Reducer<Text, Text, Text, Text> {
+            private long c0_Occurrences = 0L;
+            private long c1_Occurrences = 0L;
+            private long c2_Occurrences = 0L;
+            private long n2_Occurrences = 0L;
+            private long n3_Occurrences = 0L;
+            private String currentWord = "";
+            private String currentPair = "";
+            private String currentSwitchedPair = "";
+            private String currentTrigram = "";
+            HashMap<String, String> pairs = new HashMap<>();
 
             @Override
             protected void reduce(Text key, Iterable<Text> values, Context context) throws IOException, InterruptedException {
-                // Initialize counters for occurrences of each type
-                long n1_Occurrences = 0L;
-                long n2_Occurrences = 0L;
-                long n3_Occurrences = 0L;
-                long c0_Occurrences = 0L;
-                long c1_Occurrences = 0L;
-                long c2_Occurrences = 0L;
-                String outPutKeyString = "";
 
                 String keyString = key.toString();
                 String[] keyWords = keyString.substring(1, keyString.length() - 1).split(",\\s*"); // Extract words from key
 
-                // Iterate over the values to aggregate the counts
-                for (Text value : values) {
-                    try {
-                        long occurrences = Long.parseLong(value.toString());
-
-                        if (keyString.equals("<**>")) {
-                            c0_Occurrences += occurrences;
-                            // C0 case, sum occurrences based on the whole n-gram
-
-                        } else if (keyWords.length == 3) { // Handle cases for 3-grams
-
-                            if (keyWords[0].equals("**") && !keyWords[1].equals("**") && keyWords[2].equals("**")) {
-                                c1_Occurrences += occurrences;
-                                // C1 case, sum occurrences based on the second word
-
-                            } else if (keyWords[0].equals("**") && keyWords[1].equals("**") && !keyWords[2].equals("**")) {
-                                n1_Occurrences += occurrences;
-                                // N1 case, sum occurrences based on the third word
-
-                            } else if (!keyWords[0].equals("**") && !keyWords[1].equals("**") && keyWords[2].equals("**")) {
-                                c2_Occurrences += occurrences;
-                                // C2 case, sum occurrences based on the first pair words
-
-                            } else if (keyWords[0].equals("**") && !keyWords[1].equals("**") && !keyWords[2].equals("**")) {
-                                n2_Occurrences += occurrences;
-                                // N2 case, sum occurrences based on the second pair words
-
-                            } else if (!keyWords[0].equals("**") && !keyWords[1].equals("**") && !keyWords[2].equals("**")) {
-                                // N3 case, sum occurrences based on the trigram words
-                                n3_Occurrences += occurrences;
-                                outPutKeyString = keyString; //Save the trigram key for output key
-                            }
-                        }
-                    } catch (NumberFormatException e) {
-                        context.getCounter("StepGrams", "InvalidOccurrences").increment(1);
+                if (key.toString().equals("")) {
+                    for (Text value : values) {// C0 case
+                        c0_Occurrences += Long.parseLong(value.toString());
                     }
+                } else if (keyWords.length == 1) {
+                    if (currentWord.isEmpty()) {
+                        currentWord = key.toString();
+                    }
+                    if (!(currentWord.equals(key.toString()))) {
+                        context.write(new Text(currentWord), new Text(String.format("%s", c1_Occurrences)));//N1
+                        pairs.clear();
+                        c1_Occurrences = 0;
+                        n2_Occurrences = 0;
+                        c2_Occurrences = 0;
+                        n3_Occurrences = 0;
+                        currentWord = key.toString();
+                    }
+                    for (Text value : values) {// C1 and N1 case
+                        c1_Occurrences += Long.parseLong(value.toString());
+                    }
+                } else if (keyWords.length == 2) {// N2 case
+                    if (!(currentPair.equals(key.toString()))) {
+                        n2_Occurrences = 0;
+                        currentPair = key.toString();
+                    }
+                    for (Text value : values) {
+                        n2_Occurrences += Long.parseLong(value.toString());
+                    }
+                    pairs.put(currentPair, Long.toString(n2_Occurrences));
+                } else if (keyWords.length == 3) {//C2
+                    if (!(currentSwitchedPair.equals(key.toString()))) {
+                        c2_Occurrences = 0;
+                        currentSwitchedPair = key.toString();
+                    }
+                    for (Text value : values) {
+                        c2_Occurrences += Long.parseLong(value.toString());
+                    }
+                    currentSwitchedPair = currentSwitchedPair.substring(1, currentSwitchedPair.length() - 4);// Remove "<" and " **>"
+                    String[] words = currentSwitchedPair.split(", "); // This splits into words[1] and words[0]
+                    String keyStringPair = String.format("<%s, %s>", words[1], words[0]);
+                    pairs.put(keyStringPair, Long.toString(c2_Occurrences));
+                } else if (keyWords.length == 4) {
+                    if (!(currentTrigram.equals(key.toString()))) {
+                        currentTrigram = key.toString();
+                    }
+                    for (Text value : values) {
+                        n3_Occurrences += Long.parseLong(value.toString());
+                    }
+                    currentTrigram = currentTrigram.substring(1, currentTrigram.length() - 1);// Remove the "<" and ">
+                    String[] words = currentTrigram.split(", ");
+                    String keyStringTrigram = String.format("<%s, %s, %s>", words[1], words[0], words[2]);
+                    ;
+                    String C2_Key = String.format("<%s, %s>", words[1], words[0]);
+                    String N2_Key = String.format("<%s, %s>", words[0], words[2]);
+                    String C2_Value = pairs.get(C2_Key);
+                    String N2_Value = pairs.get(N2_Key);
+                    context.write(new Text(keyStringTrigram), new Text(String.format("%s %s %s %s", c1_Occurrences, C2_Value, N2_Value, n3_Occurrences)));
                 }
+            }
 
-                // For C0, return the sum of occurrences as a single output value
-                if (keyString.equals("<**, **, **>")) {
-                    context.write(key, new Text(String.valueOf(c0_Occurrences)));
-                }
-
-                // For C1, C2, N2, N3, return the sum of occurrences per variable
-                else if (n1_Occurrences == 0) { //
-                    String outputValue =
-                            "C1 occurrences=" + c1_Occurrences + ", " +
-                                    "C2 occurrences=" + c2_Occurrences + ", " +
-                                    "N2 occurrences=" + n2_Occurrences + ", " +
-                                    "N3 occurrences=" + n3_Occurrences;
-
-                    context.write(new Text(outPutKeyString), new Text(outputValue));
-                }
-
-                // For N1, return the sum of occurrences as a single output value
-                else {
-                    context.write(key, new Text(String.valueOf(n1_Occurrences)));
+            @Override
+            protected void cleanup(Context context) throws IOException, InterruptedException {
+                // Push the total sum of words to S3 after the reducer has finished
+                if (!(c0_Occurrences == 0L)) {
+                    // Initialize counters for occurrences of each type
+                    String totalOccurrences = Long.toString(c0_Occurrences);
+                    pushDataToS3(totalOccurrences);// TODO: fix the S3 approch
                 }
             }
         }
