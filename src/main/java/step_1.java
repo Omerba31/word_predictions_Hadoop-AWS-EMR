@@ -62,40 +62,33 @@ public class step_1 {
 
             if (!containsStopWord) {
                 // Construct keys based on n-gram length
-                String keyString1, keyString2, keyString3;
-
+                String keyString;
+                String totalOccurrences = "<**>";
                 // 1-gram
                 if (words.length == 1) {
-
-                    // C0
-                    keyString1 = "<**,**,**>";
-                    context.write(new Text(keyString1), new Text(occurrences));
-
-                    // C1
-                    keyString2 = "<**," + words[0] + ",**>";
-                    context.write(new Text(keyString2), new Text(occurrences));
-
-                    // N1
-                    keyString3 = "<**, **," + words[0] + ">";
-                    context.write(new Text(keyString3), new Text(occurrences));
+                    // C1 and N1
+                    keyString = String.format("<%s>", words[0]);
+                    context.write(new Text(String.format("%s", keyString)), new Text(String.format("%s", occurrences)));
+                    //C0
+                    context.write(new Text(String.format("%s", totalOccurrences)), new Text(String.format("%s", occurrences)));
 
                 } // 2-gram
                 else if (words.length == 2) {
+                    // N2
+                    keyString = String.format("<%s, %s>", words[0], words[1]);
+                    context.write(new Text(keyString), new Text(occurrences));
 
                     // C2
-                    keyString1 = "<" + words[0] + "," + words[1] + ",**>";
-                    context.write(new Text(keyString1), new Text(occurrences));
-
-                    // N2
-                    keyString2 = "<**," + words[0] + "," + words[1] + ">";
-                    context.write(new Text(keyString2), new Text(occurrences));
+                    //Flip the order so it will send to the same reducer and add * to mark it.
+                    keyString = String.format("<%s, %s, **>", words[1], words[0]);
+                    context.write(new Text(keyString), new Text(occurrences));
 
                 } // 3-gram
                 else {
-
                     // N3
-                    keyString1 = "<" + words[0] + "," + words[1] + "," + words[2] + ">";
-                    context.write(new Text(keyString1), new Text(occurrences));
+                    //Flip the order so it will send to the same reducer and add * in order it come after all the other to the reducer.
+                    keyString = String.format("<%s, %s, %s, **>", words[1], words[0], words[2]);
+                    context.write(new Text(keyString), new Text(occurrences));
                 }
             }
         }
@@ -126,7 +119,7 @@ public class step_1 {
                     try {
                         long occurrences = Long.parseLong(value.toString());
 
-                        if (keyString.equals("<**,**,**>")) {
+                        if (keyString.equals("<**>")) {
                             c0_Occurrences += occurrences;
                             // C0 case, sum occurrences based on the whole n-gram
 
@@ -191,30 +184,7 @@ public class step_1 {
         public static class Partition extends Partitioner<Text, Text> {
             @Override
             public int getPartition(Text key, Text value, int numPartitions) {
-                String keyStr = key.toString();
-                String[] parts = keyStr.split(",\\s*"); // Split key into parts
-
-                // For C0, send it to partition 0 (same reducer for all C0)
-                if (keyStr.equals("<**,**,**>")) {
-                    return 0; // Always send C0 to partition 0
-                }
-
-                // For N1: Partition based on the third word when the second word is **
-                if (parts.length == 3 && Objects.equals(parts[1], "**")) {
-                    // Extract the third word (since the second part is **)
-                    String thirdWord = parts[2].replaceAll("[<>]", "").trim();
-                    return (thirdWord.hashCode() & Integer.MAX_VALUE) % numPartitions;
-                }
-
-                // For C1, C2,N2, N3: Partition based on the second word if it's not **
-                if (parts.length == 3 && !Objects.equals(parts[1], "**")) {
-                    // Extract the second word
-                    String secondWord = parts[1].replaceAll("[<>]", "").trim();
-                    return (secondWord.hashCode() & Integer.MAX_VALUE) % numPartitions;
-                }
-
-                // Default case (shouldn't be needed)
-                return (keyStr.hashCode() & Integer.MAX_VALUE) % numPartitions;
+                return Math.abs(key.hashCode() % numPartitions);
             }
         }
     }
