@@ -12,10 +12,9 @@ import org.apache.hadoop.mapreduce.lib.input.FileInputFormat;
 import org.apache.hadoop.mapreduce.lib.input.TextInputFormat;
 import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
 import org.apache.hadoop.mapreduce.lib.output.TextOutputFormat;
-
 import java.io.IOException;
 
-public class Step4 {
+public class Step3 {
 
     private static class Map extends Mapper<LongWritable, Text, Text, Text> {
 
@@ -76,20 +75,20 @@ public class Step4 {
     public static void main(String[] args) throws Exception {
         Configuration conf = new Configuration();
         Job job = Job.getInstance(conf);
-        job.setJarByClass(Step4.class);
+        job.setJarByClass(Step3.class);
         job.setOutputKeyClass(Text.class);
         job.setOutputValueClass(Text.class);
         job.setMapperClass(Map.class);
-        job.setSortComparatorClass(Step4.Comparison.class);
+        job.setSortComparatorClass(Step3.Comparison.class);
         job.setReducerClass(Reduce.class);
-        job.setPartitionerClass(Step4.Partition.class);
+        job.setPartitionerClass(Step3.Partition.class);
         job.setNumReduceTasks(1);
         job.setInputFormatClass(TextInputFormat.class);
         job.setOutputFormatClass(TextOutputFormat.class);
 //        FileInputFormat.addInputPath(job, new Path("/home/spl211/IdeaProjects/MapReduceProject/output_step_33/part-r-00000"));
-        FileInputFormat.addInputPath(job, new Path("s3://bucket163897429777/output_step_33"));
+        FileInputFormat.addInputPath(job, new Path("s3://bucket163897429777/output_step_33"));//TODO: Add correct path
 //        FileOutputFormat.setOutputPath(job, new Path("/home/spl211/IdeaProjects/MapReduceProject/output_step_44"));
-        FileOutputFormat.setOutputPath(job, new Path("s3://bucket163897429777/output_step_44"));
+        FileOutputFormat.setOutputPath(job, new Path("s3://bucket163897429777/output_step_44"));//TODO: Add correct path
         System.exit(job.waitForCompletion(true) ? 0 : 1);
     }
 }

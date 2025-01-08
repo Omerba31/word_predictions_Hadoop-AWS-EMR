@@ -3,11 +3,16 @@ import org.apache.hadoop.io.Text;
 import org.apache.hadoop.mapreduce.Mapper;
 import org.apache.hadoop.mapreduce.Partitioner;
 import org.apache.hadoop.mapreduce.Reducer;
-
 import java.io.IOException;
 import java.util.Iterator;
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.mapreduce.Job;
+import org.apache.hadoop.mapreduce.lib.input.TextInputFormat;
+import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
+import org.apache.hadoop.mapreduce.lib.output.TextOutputFormat;
 
-public class Step_N1andCalculateProbabilities {
+public class Step2 {
     public static class Map extends Mapper<LongWritable, Text, Text, Text> {
         @Override
         protected void map(LongWritable key, Text value, Context context) throws IOException, InterruptedException {
@@ -84,10 +89,28 @@ public class Step_N1andCalculateProbabilities {
         }
     }
 
-    public static class partition extends Partitioner<Text, Text> {
+    public static class Partition extends Partitioner<Text, Text> {
         @Override
         public int getPartition(Text key, Text value, int numPartitions) {
             return Math.abs(key.hashCode() % numPartitions);
         }
+    }
+    public static void main(String[] args) throws Exception {
+        Configuration conf = new Configuration();
+        Job job = Job.getInstance(conf);
+        job.setJarByClass(Step2.class);
+        job.setMapperClass(Map.class);
+        job.setReducerClass(Reduce.class);
+        job.setOutputKeyClass(Text.class);
+        job.setOutputValueClass(Text.class);
+        job.setPartitionerClass(Step2.Partition.class);
+        job.setOutputFormatClass(TextOutputFormat.class);
+        job.setInputFormatClass(TextInputFormat.class);
+        job.setCombinerClass(Step2.Combiner.class);//TODO: Add combiner
+//        FileInputFormat.addInputPath(job, new Path("/home/spl211/IdeaProjects/MapReduceProject/output_step_11/part-r-00000"));
+        FileInputFormat.addInputPath(job, new Path("s3://bucket163897429777/output_step_11"));//TODO: Fix with correct path
+//        FileOutputFormat.setOutputPath(job, new Path("/home/spl211/IdeaProjects/MapReduceProject/output_step_22"));
+        FileOutputFormat.setOutputPath(job, new Path("s3://bucket163897429777/output_step_22"));//TODO: Fix with correct path
+        System.exit(job.waitForCompletion(true) ? 0 : 1);
     }
 }

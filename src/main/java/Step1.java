@@ -5,14 +5,19 @@ import org.apache.hadoop.io.Text;
 import org.apache.hadoop.mapreduce.Mapper;
 import org.apache.hadoop.mapreduce.Partitioner;
 import org.apache.hadoop.mapreduce.Reducer;
-
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.mapreduce.Job;
+import org.apache.hadoop.mapreduce.lib.input.SequenceFileInputFormat;
+import org.apache.hadoop.mapreduce.lib.input.TextInputFormat;
+import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
+import org.apache.hadoop.mapreduce.lib.output.TextOutputFormat;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.util.HashMap;
 
 
-public class step_1 {
+public class Step1 {
 
     public static void generateStopWord(Mapper<LongWritable, Text, Text, Text>.Context context, HashMap<String, Integer> stopWords) throws IOException {
         Path stopWordsPath = new Path("src/resource/heb-stopwords.txt");
@@ -91,7 +96,7 @@ public class step_1 {
                 }
             }
         }
-
+    }
         /**
          * Reducer class:
          * Aggregates occurrences for each n-gram and prioritizes placeholders ().
@@ -181,11 +186,10 @@ public class step_1 {
                 if (!(c0_Occurrences == 0L)) {
                     // Initialize counters for occurrences of each type
                     String totalOccurrences = Long.toString(c0_Occurrences);
-                    pushDataToS3(totalOccurrences);// TODO: fix the S3 approch
+                    //pushDataToS3(totalOccurrences);// TODO: fix the S3 push
                 }
             }
         }
-
 
         /**
          * Partitioner class:
@@ -198,5 +202,24 @@ public class step_1 {
                 return Math.abs(key.hashCode() % numPartitions);
             }
         }
+    public static void main(String[] args) throws Exception {
+        System.out.println("[DEBUG] STEP 1 started!");
+        System.out.println(args.length > 0 ? args[0] : "no args");
+        Configuration conf = new Configuration();
+        Job job = Job.getInstance(conf);
+        job.setJarByClass(Step1.class);
+        job.setMapperClass(Map.class);
+        job.setReducerClass(Reduce.class);
+        job.setOutputKeyClass(Text.class);
+        job.setOutputValueClass(Text.class);
+        job.setPartitionerClass(Step1.Partition.class);
+        job.setOutputFormatClass(TextOutputFormat.class);
+        job.setInputFormatClass(SequenceFileInputFormat.class);
+        job.setCombinerClass(Step1.Combiner.class);//TODO: Add combiner
+        TextInputFormat.addInputPath(job, new Path("s3://datasets.elasticmapreduce/ngrams/books/20090715/heb-all/1gram/data"));
+        TextInputFormat.addInputPath(job, new Path("s3://datasets.elasticmapreduce/ngrams/books/20090715/heb-all/2gram/data"));
+        TextInputFormat.addInputPath(job, new Path("s3://datasets.elasticmapreduce/ngrams/books/20090715/heb-all/3gram/data"));
+        FileOutputFormat.setOutputPath(job, new Path("s3://bucket163897429777/output_step_11"));//TODO: Fix with correct path
+        System.exit(job.waitForCompletion(true) ? 0 : 1);
     }
 }
