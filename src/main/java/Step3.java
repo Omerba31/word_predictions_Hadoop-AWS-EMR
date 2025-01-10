@@ -12,9 +12,12 @@ import org.apache.hadoop.mapreduce.lib.input.FileInputFormat;
 import org.apache.hadoop.mapreduce.lib.input.TextInputFormat;
 import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
 import org.apache.hadoop.mapreduce.lib.output.TextOutputFormat;
+
 import java.io.IOException;
 
 public class Step3 {
+    public static final String OUTPUT_STEP2_PATH = "s3://dsp-02-bucket/output_step_2/";
+    public static final String OUTPUT_STEP3_PATH = "s3://dsp-02-bucket/output_step_3/";
 
     private static class Map extends Mapper<LongWritable, Text, Text, Text> {
 
@@ -85,10 +88,9 @@ public class Step3 {
         job.setNumReduceTasks(1);
         job.setInputFormatClass(TextInputFormat.class);
         job.setOutputFormatClass(TextOutputFormat.class);
-//        FileInputFormat.addInputPath(job, new Path("/home/spl211/IdeaProjects/MapReduceProject/output_step_33/part-r-00000"));
-        FileInputFormat.addInputPath(job, new Path("s3://bucket163897429777/output_step_33"));//TODO: Add correct path
-//        FileOutputFormat.setOutputPath(job, new Path("/home/spl211/IdeaProjects/MapReduceProject/output_step_44"));
-        FileOutputFormat.setOutputPath(job, new Path("s3://bucket163897429777/output_step_44"));//TODO: Add correct path
+        job.setSortComparatorClass(Step3.Comparison.class);
+        FileInputFormat.addInputPath(job, new Path(OUTPUT_STEP2_PATH));
+        FileOutputFormat.setOutputPath(job, new Path(OUTPUT_STEP3_PATH));
         System.exit(job.waitForCompletion(true) ? 0 : 1);
     }
 }

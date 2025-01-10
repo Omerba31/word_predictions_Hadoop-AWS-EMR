@@ -3,10 +3,16 @@ import org.apache.hadoop.io.Text;
 import org.apache.hadoop.mapreduce.Mapper;
 import org.apache.hadoop.mapreduce.Partitioner;
 import org.apache.hadoop.mapreduce.Reducer;
+import org.apache.hadoop.fs.FileSystem;
+
 import java.io.IOException;
 import java.util.List;
 import java.util.ArrayList;
 import java.util.Iterator;
+import java.io.OutputStream;
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.mapreduce.Job;
@@ -16,7 +22,21 @@ import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
 import org.apache.hadoop.mapreduce.lib.output.TextOutputFormat;
 
 public class Step2 {
+    public static final String OUTPUT_STEP1_PATH = "s3://dsp-02-bucket/output_step_1/";
+    public static final String OUTPUT_STEP2_PATH = "s3://dsp-02-bucket/output_step_2/";
+    public static long C0;
+
     public static class Map extends Mapper<LongWritable, Text, Text, Text> {
+
+        @Override
+        protected void setup(Context context) throws IOException, InterruptedException {
+            FileSystem fs = FileSystem.get(context.getConfiguration());
+            Path path = new Path("s3://dsp-02-bucket/vars/C0.txt");
+            try (BufferedReader br = new BufferedReader(new InputStreamReader(fs.open(path)))) {
+                Step2.C0 = Long.parseLong(br.readLine());
+            }
+        }
+
         @Override
         protected void map(LongWritable key, Text value, Context context) throws IOException, InterruptedException {
             String line = value.toString();
@@ -41,10 +61,22 @@ public class Step2 {
         }
     }
 
+    public static class Combiner extends Reducer<Text, Text, Text, Text> {
+        @Override
+        protected void reduce(Text key, Iterable<Text> values, Context context) throws IOException, InterruptedException {
+            long sum = 0;
+            for (Text value : values) {
+                sum += Long.parseLong(value.toString());
+            }
+            context.write(key, new Text(String.valueOf(sum)));
+        }
+    }
+
     public static class Reduce extends Reducer<Text, Text, Text, Text> {
         private String N1 = null;
         private String N2 = null;
         List<Text> combinedValues = new ArrayList<>();
+
         @Override
         public void reduce(Text key, Iterable<Text> values, Context context) throws IOException, InterruptedException {
             String keyString = key.toString().substring(1, key.getLength() - 1);
@@ -86,7 +118,6 @@ public class Step2 {
             long N3 = Long.parseLong(iterator.next().toString());
             long C1 = Long.parseLong(iterator.next().toString());
             long C2 = Long.parseLong(iterator.next().toString());
-            long C0 = 1;  // Total words in corpus, C0 //TODO: get this from s3
 
             // Calculate weights k2 and k3
             double k2 = (Math.log(N2 + 1) + 1) / (Math.log(N2 + 1) + 2);  // k2 = log(N2 + 1) + 1 / (log(N2 + 1) + 2)
@@ -108,6 +139,7 @@ public class Step2 {
             return Math.abs(key.hashCode() % numPartitions);
         }
     }
+
     public static void main(String[] args) throws Exception {
         Configuration conf = new Configuration();
         Job job = Job.getInstance(conf);
@@ -120,10 +152,8 @@ public class Step2 {
         job.setOutputFormatClass(TextOutputFormat.class);
         job.setInputFormatClass(TextInputFormat.class);
         job.setCombinerClass(Step2.Combiner.class);//TODO: Add combiner
-//        FileInputFormat.addInputPath(job, new Path("/home/spl211/IdeaProjects/MapReduceProject/output_step_11/part-r-00000"));
-        FileInputFormat.addInputPath(job, new Path("s3://bucket163897429777/output_step_11"));//TODO: Fix with correct path
-//        FileOutputFormat.setOutputPath(job, new Path("/home/spl211/IdeaProjects/MapReduceProject/output_step_22"));
-        FileOutputFormat.setOutputPath(job, new Path("s3://bucket163897429777/output_step_22"));//TODO: Fix with correct path
+        FileInputFormat.addInputPath(job, new Path(OUTPUT_STEP1_PATH));
+        FileOutputFormat.setOutputPath(job, new Path(OUTPUT_STEP2_PATH));
         System.exit(job.waitForCompletion(true) ? 0 : 1);
     }
 }

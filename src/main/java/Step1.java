@@ -11,23 +11,39 @@ import org.apache.hadoop.mapreduce.lib.input.SequenceFileInputFormat;
 import org.apache.hadoop.mapreduce.lib.input.TextInputFormat;
 import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
 import org.apache.hadoop.mapreduce.lib.output.TextOutputFormat;
+import org.apache.hadoop.mapreduce.Mapper.Context;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.util.HashMap;
-
+import java.io.OutputStream;
+import java.util.Set;
+import java.util.HashSet;
 
 public class Step1 {
 
-    public static void generateStopWord(Mapper<LongWritable, Text, Text, Text>.Context context, HashMap<String, Integer> stopWords) throws IOException {
-        Path stopWordsPath = new Path("src/resource/heb-stopwords.txt");
-        FileSystem fs = FileSystem.getLocal(context.getConfiguration());
-        try (BufferedReader br = new BufferedReader(new InputStreamReader(fs.open(stopWordsPath)))) {
-            String word;
-            while ((word = br.readLine()) != null) {
-                stopWords.put(word.trim(), 1);
-            }
+    // The real path for the 1-gram, 2-gram, and 3-gram data files
+//    public static final String INPUT_PATH_1GRAM = "s3://datasets.elasticmapreduce/ngrams/books/20090715/heb-all/1gram/data";
+//    public static final String INPUT_PATH_2GRAM = "s3://datasets.elasticmapreduce/ngrams/books/20090715/heb-all/1gram/data";
+//    public static final String INPUT_PATH_3GRAM = "s3://datasets.elasticmapreduce/ngrams/books/20090715/heb-all/1gram/data";
+
+    public static final String INPUT_PATH_1GRAM = "s3://dsp-02-bucket/grams/1gram";
+    public static final String INPUT_PATH_2GRAM = "s3://dsp-02-bucket/grams/2gram";
+    public static final String INPUT_PATH_3GRAM = "s3://dsp-02-bucket/grams/3gram";
+
+    public static final String OUTPUT_STEP1_PATH = "s3://dsp-02-bucket/output_step_1/";
+
+    private void generateStopWord(Context context, HashMap<String, Integer> stopWords) {
+        Set<String> stopWords = new HashSet<>();
+        FileSystem fs = FileSystem.get(context.getConfiguration());
+        Path stopWordsPath = new Path("s3://dsp-02-bucket/resources/heb-stopwords.txt");
+        BufferedReader reader = new BufferedReader(new InputStreamReader(fs.open(stopWordsPath)));
+
+        String line;
+        while ((line = reader.readLine()) != null) {
+            stopWords.add(line.trim());
         }
+        reader.close();
     }
 
     /**
@@ -40,7 +56,7 @@ public class Step1 {
 
         @Override
         protected void setup(Context context) throws IOException {
-            generateStopWord(context, stopWords);
+            generateStopWord(context);
         }
 
         @Override
@@ -103,6 +119,17 @@ public class Step1 {
          * Reducer class:
          * Aggregates occurrences for each n-gram and prioritizes placeholders ().
          */
+
+        public static class Combiner extends Reducer<Text, Text, Text, Text> {
+            @Override
+            protected void reduce(Text key, Iterable<Text> values, Context context) throws IOException, InterruptedException {
+                long sum = 0;
+                for (Text value : values) {
+                    sum += Long.parseLong(value.toString());
+                }
+                context.write(key, new Text(String.valueOf(sum)));
+            }
+        }
 
         public static class Reduce extends Reducer<Text, Text, Text, Text> {
             private long c0_Occurrences = 0L;
@@ -172,7 +199,11 @@ public class Step1 {
                 if (!(c0_Occurrences == 0L)) {
                     // Initialize counters for occurrences of each type
                     String totalOccurrences = Long.toString(c0_Occurrences);
-                    //pushDataToS3(totalOccurrences);// TODO: fix the S3 push
+                    FileSystem fs = FileSystem.get(context.getConfiguration());
+                    try (OutputStream out = fs.create(new Path("s3://dsp-02-bucket/vars/C0.txt"))) { // Write to S3
+                        out.write(String.valueOf(totalOccurrences).getBytes());
+                    }
+                    super.cleanup(context);  // Ensure proper cleanup
                 }
             }
         }
@@ -189,6 +220,8 @@ public class Step1 {
             }
         }
     public static void main(String[] args) throws Exception {
+
+
         System.out.println("[DEBUG] STEP 1 started!");
         System.out.println(args.length > 0 ? args[0] : "no args");
         Configuration conf = new Configuration();
@@ -199,13 +232,14 @@ public class Step1 {
         job.setOutputKeyClass(Text.class);
         job.setOutputValueClass(Text.class);
         job.setPartitionerClass(Step1.Partition.class);
+        job.setCombinerClass(Step1.Combiner.class);
         job.setOutputFormatClass(TextOutputFormat.class);
-        job.setInputFormatClass(SequenceFileInputFormat.class);
-        job.setCombinerClass(Step1.Combiner.class);//TODO: Add combiner
-        TextInputFormat.addInputPath(job, new Path("s3://datasets.elasticmapreduce/ngrams/books/20090715/heb-all/1gram/data"));
-        TextInputFormat.addInputPath(job, new Path("s3://datasets.elasticmapreduce/ngrams/books/20090715/heb-all/2gram/data"));
-        TextInputFormat.addInputPath(job, new Path("s3://datasets.elasticmapreduce/ngrams/books/20090715/heb-all/3gram/data"));
-        FileOutputFormat.setOutputPath(job, new Path("s3://bucket163897429777/output_step_11"));//TODO: Fix with correct path
+        job.setInputFormatClass(TextInputFormat.class);
+        job.setCombinerClass(Step1.Combiner.class);//TODO: check combiner
+        TextInputFormat.addInputPath(job, new Path(INPUT_PATH_1GRAM));
+        TextInputFormat.addInputPath(job, new Path(INPUT_PATH_2GRAM));
+        TextInputFormat.addInputPath(job, new Path(INPUT_PATH_3GRAM));
+        FileOutputFormat.setOutputPath(job, new Path(OUTPUT_STEP1_PATH));
         System.exit(job.waitForCompletion(true) ? 0 : 1);
     }
 }
