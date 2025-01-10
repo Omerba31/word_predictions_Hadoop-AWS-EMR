@@ -35,22 +35,6 @@ public class Step1 {
 
     private static Set<String> stopWords = new HashSet<>();
 
-    private static void generateStopWord(Mapper.Context context) {
-        try {
-            FileSystem fs = FileSystem.get(context.getConfiguration());
-            Path stopWordsPath = new Path("s3://dsp-02-bucket/resources/heb-stopwords.txt");
-            BufferedReader reader = new BufferedReader(new InputStreamReader(fs.open(stopWordsPath)));
-
-            String line;
-            while ((line = reader.readLine()) != null) {
-                stopWords.add(line.trim());
-            }
-            reader.close();
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
-    }
-
     /**
      * Mapper class:
      * Processes lines to extract n-grams (only 1-grams, 2-grams, and 3-grams), filters out stop words, and emits n-grams with their occurrences.
@@ -59,8 +43,27 @@ public class Step1 {
     public static class Map extends Mapper<LongWritable, Text, Text, Text> {
 
         @Override
-        protected void setup(Context context) throws IOException {
-            generateStopWord(context);
+        protected void setup(Mapper<LongWritable, Text, Text, Text>.Context context) throws IOException, InterruptedException {
+            super.setup(context);
+            String[] stopWordsArr = {
+                    "״", "׳", "של", "רב", "פי", "עם", "עליו", "עליהם", "על", "עד", "מן", "מכל", "מי",
+                    "מהם", "מה", "מ", "למה", "לכל", "לי", "לו", "להיות", "לה", "לא", "כן", "כמה", "כלי",
+                    "כל", "כי", "יש", "ימים", "יותר", "יד", "י", "זה", "ז", "ועל", "ומי", "ולא", "וכן",
+                    "וכל", "והיא", "והוא", "ואם", "ו", "הרבה", "הנה", "היו", "היה", "היא", "הזה", "הוא",
+                    "דבר", "ד", "ג", "בני", "בכל", "בו", "בה", "בא", "את", "אשר", "אם", "אלה", "אל",
+                    "אך", "איש", "אין", "אחת", "אחר", "אחד", "אז", "אותו", "־", "^", "?", ";", ":", "1",
+                    ".", "-", "*", "\"", "!", "שלשה", "בעל", "פני", ")", "גדול", "שם", "עלי", "עולם",
+                    "מקום", "לעולם", "לנו", "להם", "ישראל", "יודע", "זאת", "השמים", "הזאת", "הדברים",
+                    "הדבר", "הבית", "האמת", "דברי", "במקום", "בהם", "אמרו", "אינם", "אחרי", "אותם",
+                    "אדם", "(", "חלק", "שני", "שכל", "שאר", "ש", "ר", "פעמים", "נעשה", "ן", "ממנו",
+                    "מלא", "מזה", "ם", "לפי", "ל", "כמו", "כבר", "כ", "זו", "ומה", "ולכל", "ובין",
+                    "ואין", "הן", "היתה", "הא", "ה", "בל", "בין", "בזה", "ב", "אף", "אי", "אותה",
+                    "או", "אבל", "א"
+            };
+            for (String word : stopWordsArr) {
+                stopWords.add(word);
+            }
+
         }
 
         @Override
