@@ -12,6 +12,7 @@ import org.apache.hadoop.mapreduce.lib.input.TextInputFormat;
 import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
 import org.apache.hadoop.mapreduce.lib.output.TextOutputFormat;
 import org.apache.hadoop.mapreduce.Mapper.Context;
+
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
@@ -24,26 +25,30 @@ public class Step1 {
 
     // The real path for the 1-gram, 2-gram, and 3-gram data files
 //    public static final String INPUT_PATH_1GRAM = "s3://datasets.elasticmapreduce/ngrams/books/20090715/heb-all/1gram/data";
-//    public static final String INPUT_PATH_2GRAM = "s3://datasets.elasticmapreduce/ngrams/books/20090715/heb-all/1gram/data";
-//    public static final String INPUT_PATH_3GRAM = "s3://datasets.elasticmapreduce/ngrams/books/20090715/heb-all/1gram/data";
+//    public static final String INPUT_PATH_2GRAM = "s3://datasets.elasticmapreduce/ngrams/books/20090715/heb-all/2gram/data";
+//    public static final String INPUT_PATH_3GRAM = "s3://datasets.elasticmapreduce/ngrams/books/20090715/heb-all/3gram/data";
 
     public static final String INPUT_PATH_1GRAM = "s3://dsp-02-bucket/grams/1gram";
     public static final String INPUT_PATH_2GRAM = "s3://dsp-02-bucket/grams/2gram";
     public static final String INPUT_PATH_3GRAM = "s3://dsp-02-bucket/grams/3gram";
-
     public static final String OUTPUT_STEP1_PATH = "s3://dsp-02-bucket/output_step_1/";
 
-    private void generateStopWord(Context context, HashMap<String, Integer> stopWords) {
-        Set<String> stopWords = new HashSet<>();
-        FileSystem fs = FileSystem.get(context.getConfiguration());
-        Path stopWordsPath = new Path("s3://dsp-02-bucket/resources/heb-stopwords.txt");
-        BufferedReader reader = new BufferedReader(new InputStreamReader(fs.open(stopWordsPath)));
+    private static Set<String> stopWords = new HashSet<>();
 
-        String line;
-        while ((line = reader.readLine()) != null) {
-            stopWords.add(line.trim());
+    private static void generateStopWord(Mapper.Context context) {
+        try {
+            FileSystem fs = FileSystem.get(context.getConfiguration());
+            Path stopWordsPath = new Path("s3://dsp-02-bucket/resources/heb-stopwords.txt");
+            BufferedReader reader = new BufferedReader(new InputStreamReader(fs.open(stopWordsPath)));
+
+            String line;
+            while ((line = reader.readLine()) != null) {
+                stopWords.add(line.trim());
+            }
+            reader.close();
+        } catch (IOException e) {
+            e.printStackTrace();
         }
-        reader.close();
     }
 
     /**
@@ -52,7 +57,6 @@ public class Step1 {
      */
 
     public static class Map extends Mapper<LongWritable, Text, Text, Text> {
-        private final HashMap<String, Integer> stopWords = new HashMap<>();
 
         @Override
         protected void setup(Context context) throws IOException {
@@ -74,7 +78,7 @@ public class Step1 {
 
             boolean containsStopWord = false;
             for (String word : words) {
-                if (stopWords.containsKey(word)) {
+                if (stopWords.contains(word)) {
                     containsStopWord = true;
                     break;
                 }
@@ -115,110 +119,111 @@ public class Step1 {
             }
         }
     }
-        /**
-         * Reducer class:
-         * Aggregates occurrences for each n-gram and prioritizes placeholders ().
-         */
 
-        public static class Combiner extends Reducer<Text, Text, Text, Text> {
-            @Override
-            protected void reduce(Text key, Iterable<Text> values, Context context) throws IOException, InterruptedException {
-                long sum = 0;
+    /**
+     * Reducer class:
+     * Aggregates occurrences for each n-gram and prioritizes placeholders ().
+     */
+
+    public static class Combiner extends Reducer<Text, Text, Text, Text> {
+        @Override
+        protected void reduce(Text key, Iterable<Text> values, Context context) throws IOException, InterruptedException {
+            long sum = 0;
+            for (Text value : values) {
+                sum += Long.parseLong(value.toString());
+            }
+            context.write(key, new Text(String.valueOf(sum)));
+        }
+    }
+
+    public static class Reduce extends Reducer<Text, Text, Text, Text> {
+        private long c0_Occurrences = 0L;
+        private long c1_Occurrences = 0L;
+        private long n2_Occurrences = 0L;
+        private long n3_Occurrences = 0L;
+        private String currentOnegram = "";
+        private String currentPair = "";
+        private String currentTrigram = "";
+
+        @Override
+        protected void reduce(Text key, Iterable<Text> values, Context context) throws IOException, InterruptedException {
+
+            String keyString = key.toString();
+            String[] keyWords = keyString.substring(1, keyString.length() - 1).split(",\\s*"); // Extract words from key
+
+            if (key.toString().equals("**")) {
+                for (Text value : values) {// C0 case
+                    c0_Occurrences += Long.parseLong(value.toString());
+                }
+            } else if (keyWords.length == 1) {
+                if (currentOnegram.isEmpty() || !(currentOnegram.equals(keyString))) {
+                    c1_Occurrences = 0L;
+                    currentOnegram = keyString;
+                }
+                for (Text value : values) {// C1 and N1 case
+                    c1_Occurrences += Long.parseLong(value.toString());
+                }
+            } else if (keyWords.length == 2) {// N2 case
+                if (currentPair.isEmpty() || !(currentPair.equals(keyString))) {
+                    n2_Occurrences = 0L;
+                    currentPair = keyString;
+                }
                 for (Text value : values) {
-                    sum += Long.parseLong(value.toString());
+                    n2_Occurrences += Long.parseLong(value.toString());
                 }
-                context.write(key, new Text(String.valueOf(sum)));
-            }
-        }
-
-        public static class Reduce extends Reducer<Text, Text, Text, Text> {
-            private long c0_Occurrences = 0L;
-            private long c1_Occurrences = 0L;
-            private long n2_Occurrences = 0L;
-            private long n3_Occurrences = 0L;
-            private String currentOnegram = "";
-            private String currentPair = "";
-            private String currentTrigram = "";
-
-            @Override
-            protected void reduce(Text key, Iterable<Text> values, Context context) throws IOException, InterruptedException {
-
-                String keyString = key.toString();
-                String[] keyWords = keyString.substring(1, keyString.length() - 1).split(",\\s*"); // Extract words from key
-
-                if (key.toString().equals("**")) {
-                    for (Text value : values) {// C0 case
-                        c0_Occurrences += Long.parseLong(value.toString());
-                    }
-                } else if (keyWords.length == 1) {
-                    if (currentOnegram.isEmpty() || !(currentOnegram.equals(keyString))) {
-                        c1_Occurrences = 0L;
-                        currentOnegram = keyString;
-                    }
-                    for (Text value : values) {// C1 and N1 case
-                        c1_Occurrences += Long.parseLong(value.toString());
-                    }
-                } else if (keyWords.length == 2) {// N2 case
-                    if (currentPair.isEmpty() || !(currentPair.equals(keyString))) {
-                        n2_Occurrences = 0L;
-                        currentPair = keyString;
-                    }
-                    for (Text value : values) {
-                        n2_Occurrences += Long.parseLong(value.toString());
-                    }
-                } else if (keyWords.length == 3) {//C2
-                    if (currentTrigram.isEmpty() || !(currentTrigram.equals(keyString))) {
-                        n3_Occurrences = 0L;
-                        currentTrigram = keyString;
-                    }
-                    for (Text value : values) {
-                        n3_Occurrences += Long.parseLong(value.toString());
-                    }
-                    currentTrigram = key.toString();
-                    currentTrigram = currentTrigram.substring(1, currentTrigram.length() - 1);// Remove the "<" and ">
-                    String[] words = currentTrigram.split(", ");
-                    if(words[2] == "**"){
-                        String N2_Key = String.format("<%s, %s>", words[1], words[0]);
-                        String N2_Value = Long.toString(n2_Occurrences);
-                        String N1_Value = Long.toString(c1_Occurrences);
-                        context.write(new Text(N2_Key), new Text(String.format("%s %s", N1_Value,N2_Value)));
-                    }
-                    else {
-                        String N3_Key = String.format("<%s, %s, %s>", words[1], words[0], words[2]);
-                        String N3_Value = Long.toString(n3_Occurrences);
-                        String C2_Value = Long.toString(n2_Occurrences);
-                        String C1_Value = Long.toString(c1_Occurrences);
-                        context.write(new Text(N3_Key), new Text(String.format("%s %s %s", N3_Value, C1_Value, C2_Value)));
-                    }
+            } else if (keyWords.length == 3) {//C2
+                if (currentTrigram.isEmpty() || !(currentTrigram.equals(keyString))) {
+                    n3_Occurrences = 0L;
+                    currentTrigram = keyString;
                 }
-            }
-
-            @Override
-            protected void cleanup(Context context) throws IOException, InterruptedException {
-                // Push the total sum of words to S3 after the reducer has finished
-                if (!(c0_Occurrences == 0L)) {
-                    // Initialize counters for occurrences of each type
-                    String totalOccurrences = Long.toString(c0_Occurrences);
-                    FileSystem fs = FileSystem.get(context.getConfiguration());
-                    try (OutputStream out = fs.create(new Path("s3://dsp-02-bucket/vars/C0.txt"))) { // Write to S3
-                        out.write(String.valueOf(totalOccurrences).getBytes());
-                    }
-                    super.cleanup(context);  // Ensure proper cleanup
+                for (Text value : values) {
+                    n3_Occurrences += Long.parseLong(value.toString());
+                }
+                currentTrigram = key.toString();
+                currentTrigram = currentTrigram.substring(1, currentTrigram.length() - 1);// Remove the "<" and ">
+                String[] words = currentTrigram.split(", ");
+                if (words[2] == "**") {
+                    String N2_Key = String.format("<%s, %s>", words[1], words[0]);
+                    String N2_Value = Long.toString(n2_Occurrences);
+                    String N1_Value = Long.toString(c1_Occurrences);
+                    context.write(new Text(N2_Key), new Text(String.format("%s %s", N1_Value, N2_Value)));
+                } else {
+                    String N3_Key = String.format("<%s, %s, %s>", words[1], words[0], words[2]);
+                    String N3_Value = Long.toString(n3_Occurrences);
+                    String C2_Value = Long.toString(n2_Occurrences);
+                    String C1_Value = Long.toString(c1_Occurrences);
+                    context.write(new Text(N3_Key), new Text(String.format("%s %s %s", N3_Value, C1_Value, C2_Value)));
                 }
             }
         }
 
-        /**
-         * Partitioner class:
-         * Distributes n-grams to reducers based on hash code.
-         */
-
-        public static class Partition extends Partitioner<Text, Text> {
-            @Override
-            public int getPartition(Text key, Text value, int numPartitions) {
-                return Math.abs(key.hashCode() % numPartitions);
+        @Override
+        protected void cleanup(Context context) throws IOException, InterruptedException {
+            // Push the total sum of words to S3 after the reducer has finished
+            if (!(c0_Occurrences == 0L)) {
+                // Initialize counters for occurrences of each type
+                String totalOccurrences = Long.toString(c0_Occurrences);
+                FileSystem fs = FileSystem.get(context.getConfiguration());
+                try (OutputStream out = fs.create(new Path("s3://dsp-02-bucket/vars/C0.txt"))) { // Write to S3
+                    out.write(String.valueOf(totalOccurrences).getBytes());
+                }
+                super.cleanup(context);  // Ensure proper cleanup
             }
         }
+    }
+
+    /**
+     * Partitioner class:
+     * Distributes n-grams to reducers based on hash code.
+     */
+
+    public static class Partition extends Partitioner<Text, Text> {
+        @Override
+        public int getPartition(Text key, Text value, int numPartitions) {
+            return Math.abs(key.hashCode() % numPartitions);
+        }
+    }
+
     public static void main(String[] args) throws Exception {
 
 
