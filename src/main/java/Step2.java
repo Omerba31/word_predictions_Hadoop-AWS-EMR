@@ -9,7 +9,6 @@ import java.io.IOException;
 import java.util.List;
 import java.util.ArrayList;
 import java.util.Iterator;
-import java.io.OutputStream;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 
@@ -29,7 +28,7 @@ public class Step2 {
     public static class Map extends Mapper<LongWritable, Text, Text, Text> {
 
         @Override
-        protected void setup(Context context) throws IOException, InterruptedException {
+        protected void setup(Context context) throws IOException {
             FileSystem fs = FileSystem.get(context.getConfiguration());
             Path path = new Path("s3://dsp-02-bucket/vars/C0.txt");
             try (BufferedReader br = new BufferedReader(new InputStreamReader(fs.open(path)))) {
@@ -84,7 +83,6 @@ public class Step2 {
 
             if (keyParts.length == 2) {
                 // Value string contains: N1, N2
-                Iterator<Text> iterator = values.iterator();
                 N1 = values.iterator().next().toString();
                 N2 = values.iterator().next().toString();
 

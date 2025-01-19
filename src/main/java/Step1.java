@@ -7,17 +7,14 @@ import org.apache.hadoop.mapreduce.Partitioner;
 import org.apache.hadoop.mapreduce.Reducer;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.mapreduce.Job;
-import org.apache.hadoop.mapreduce.lib.input.SequenceFileInputFormat;
 import org.apache.hadoop.mapreduce.lib.input.TextInputFormat;
 import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
 import org.apache.hadoop.mapreduce.lib.output.TextOutputFormat;
-import org.apache.hadoop.mapreduce.Mapper.Context;
 
-import java.io.BufferedReader;
 import java.io.IOException;
-import java.io.InputStreamReader;
-import java.util.HashMap;
+import java.util.Collections;
 import java.io.OutputStream;
+import java.util.Objects;
 import java.util.Set;
 import java.util.HashSet;
 
@@ -33,7 +30,7 @@ public class Step1 {
     public static final String INPUT_PATH_3GRAM = "s3://dsp-02-bucket/grams/3gram";
     public static final String OUTPUT_STEP1_PATH = "s3://dsp-02-bucket/output_step_1/";
 
-    private static Set<String> stopWords = new HashSet<>();
+    private final static Set<String> stopWords = new HashSet<>();
 
     /**
      * Mapper class:
@@ -60,10 +57,7 @@ public class Step1 {
                     "ואין", "הן", "היתה", "הא", "ה", "בל", "בין", "בזה", "ב", "אף", "אי", "אותה",
                     "או", "אבל", "א"
             };
-            for (String word : stopWordsArr) {
-                stopWords.add(word);
-            }
-
+            Collections.addAll(stopWords, stopWordsArr);
         }
 
         @Override
@@ -113,9 +107,9 @@ public class Step1 {
                 } // 3-gram
                 else {
                     // N3
-                    //Flip the order so it will send to the same reducer and add * in order it come after all the other to the reducer.
+                    //Flip the order so it will send to the same reducer and add * in order it comes after all the other to the reducer.
                     keyString = String.format("<%s, %s, %s>", words[1], words[0], words[2]);
-                    String dummyKeyString = String.format("<%s, %s, **>", words[2], words[1]);//checks if the pair is essential in the reducer
+                    String dummyKeyString = String.format("<%s, %s, %s>", words[2], words[1], "**");//checks if the pair is essential in the reducer
                     context.write(new Text(keyString), new Text(occurrences));
                     context.write(new Text(dummyKeyString), new Text(occurrences));
                 }
@@ -144,48 +138,58 @@ public class Step1 {
         private long c1_Occurrences = 0L;
         private long n2_Occurrences = 0L;
         private long n3_Occurrences = 0L;
-        private String currentOnegram = "";
-        private String currentPair = "";
-        private String currentTrigram = "";
+        private String currentOneGram = "";
+        private String currentBiGram = "";
+        private String currentTriGram = "";
 
         @Override
         protected void reduce(Text key, Iterable<Text> values, Context context) throws IOException, InterruptedException {
 
             String keyString = key.toString();
             String[] keyWords = keyString.substring(1, keyString.length() - 1).split(",\\s*"); // Extract words from key
+            for (int i = 0; i < keyWords.length; i++) {
+                keyWords[i] = keyWords[i].trim(); // Trim each word to remove leading/trailing spaces
+            }
 
             if (key.toString().equals("**")) {
                 for (Text value : values) {// C0 case
                     c0_Occurrences += Long.parseLong(value.toString());
                 }
             } else if (keyWords.length == 1) {
-                if (currentOnegram.isEmpty() || !(currentOnegram.equals(keyString))) {
+                if (currentOneGram.isEmpty() || !(currentOneGram.equals(keyString))) {
                     c1_Occurrences = 0L;
-                    currentOnegram = keyString;
+                    currentOneGram = keyString;
                 }
                 for (Text value : values) {// C1 and N1 case
                     c1_Occurrences += Long.parseLong(value.toString());
                 }
+
             } else if (keyWords.length == 2) {// N2 case
-                if (currentPair.isEmpty() || !(currentPair.equals(keyString))) {
+                if (currentBiGram.isEmpty() || !(currentBiGram.equals(keyString))) {
                     n2_Occurrences = 0L;
-                    currentPair = keyString;
+                    currentBiGram = keyString;
                 }
                 for (Text value : values) {
                     n2_Occurrences += Long.parseLong(value.toString());
                 }
-            } else if (keyWords.length == 3) {//C2
-                if (currentTrigram.isEmpty() || !(currentTrigram.equals(keyString))) {
+
+            } else if (keyWords.length == 3) {// C2
+                if (currentTriGram.isEmpty() || !(currentTriGram.equals(keyString))) {
                     n3_Occurrences = 0L;
-                    currentTrigram = keyString;
+                    currentTriGram = keyString;
                 }
                 for (Text value : values) {
                     n3_Occurrences += Long.parseLong(value.toString());
                 }
-                currentTrigram = key.toString();
-                currentTrigram = currentTrigram.substring(1, currentTrigram.length() - 1);// Remove the "<" and ">
-                String[] words = currentTrigram.split(", ");
-                if (words[2] == "**") {
+//                currentTrigram = key.toString();
+                currentTriGram = currentTriGram.substring(1, currentTriGram.length() - 1);// Remove the "<" and ">
+                String[] words = currentTriGram.split(", ");
+                System.err.println("currentTrigram: [" + currentTriGram + "]"); // Debug
+                for (String word : words) {
+                    System.err.println("word: [" + word + "]"); // Debug
+                }
+
+                if (Objects.equals(words[2], "**")) {
                     String N2_Key = String.format("<%s, %s>", words[1], words[0]);
                     String N2_Value = Long.toString(n2_Occurrences);
                     String N1_Value = Long.toString(c1_Occurrences);
@@ -208,7 +212,7 @@ public class Step1 {
                 String totalOccurrences = Long.toString(c0_Occurrences);
                 FileSystem fs = FileSystem.get(context.getConfiguration());
                 try (OutputStream out = fs.create(new Path("s3://dsp-02-bucket/vars/C0.txt"))) { // Write to S3
-                    out.write(String.valueOf(totalOccurrences).getBytes());
+                    out.write(totalOccurrences.getBytes());
                 }
                 super.cleanup(context);  // Ensure proper cleanup
             }
@@ -228,7 +232,6 @@ public class Step1 {
     }
 
     public static void main(String[] args) throws Exception {
-
 
         System.out.println("[DEBUG] STEP 1 started!");
         System.out.println(args.length > 0 ? args[0] : "no args");
