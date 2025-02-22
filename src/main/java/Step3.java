@@ -16,8 +16,9 @@ import org.apache.hadoop.mapreduce.lib.output.TextOutputFormat;
 import java.io.IOException;
 
 public class Step3 {
-    public static final String OUTPUT_STEP2_PATH = "s3://dsp-02-buckets/output_step_2/";
-    public static final String OUTPUT_STEP3_PATH = "s3://dsp-02-buckets/output_step_3/";
+    static String bucketPath = "s3://dsp-02-bucket";
+    public static final String OUTPUT_STEP2_PATH = bucketPath + "/output_step_2/";
+    public static final String OUTPUT_STEP3_PATH = bucketPath + "/output_step_3/";
 
     private static class Map extends Mapper<LongWritable, Text, Text, Text> {
 

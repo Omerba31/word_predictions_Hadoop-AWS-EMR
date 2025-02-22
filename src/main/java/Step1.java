@@ -25,10 +25,11 @@ public class Step1 {
 //    public static final String INPUT_PATH_2GRAM = "s3://datasets.elasticmapreduce/ngrams/books/20090715/heb-all/2gram/data";
 //    public static final String INPUT_PATH_3GRAM = "s3://datasets.elasticmapreduce/ngrams/books/20090715/heb-all/3gram/data";
 
-    public static final String INPUT_PATH_1GRAM = "s3://dsp-02-buckets/grams/1gram";
-    public static final String INPUT_PATH_2GRAM = "s3://dsp-02-buckets/grams/2gram";
-    public static final String INPUT_PATH_3GRAM = "s3://dsp-02-buckets/grams/3gram";
-    public static final String OUTPUT_STEP1_PATH = "s3://dsp-02-buckets/output_step_1/";
+    static String bucketPath = "s3://dsp-02-bucket";
+    public static final String INPUT_PATH_1GRAM = bucketPath + "/grams/1gram";
+    public static final String INPUT_PATH_2GRAM = bucketPath + "/grams/2gram";
+    public static final String INPUT_PATH_3GRAM = bucketPath + "/grams/3gram";
+    public static final String OUTPUT_STEP1_PATH = bucketPath + "/output_step_1/";
 
     private final static Set<String> stopWords = new HashSet<>();
 
@@ -163,9 +164,9 @@ public class Step1 {
                     c0_Occurrences += Long.parseLong(value.toString());
                 }
             } else if (keyWords.length == 1) {
-                if (currentOneGram.isEmpty() || !(currentOneGram.equals(keyString))) {
+                if (currentOneGram.isEmpty() || !(currentOneGram.equals(keyWords[0]))) {
                     c1_Occurrences = 0L;
-                    currentOneGram = keyString;
+                    currentOneGram = keyWords[0];
                 }
                 for (Text value : values) {// C1 and N1 case
                     c1_Occurrences += Long.parseLong(value.toString());
@@ -190,11 +191,7 @@ public class Step1 {
                 }
 //                currentTrigram = key.toString();
                 currentTriGram = currentTriGram.substring(1, currentTriGram.length() - 1);// Remove the "<" and ">
-                String[] words = currentTriGram.split(", ");
-                System.err.println("currentTrigram: [" + currentTriGram + "]"); // Debug
-                for (String word : words) {
-                    System.err.println("word: [" + word + "]"); // Debug
-                }
+                String[] words = currentTriGram.split(",\\s*");
 
                 if (Objects.equals(words[2], "**")) {
                     String N2_Key = String.format("<%s, %s>", words[1], words[0]);
@@ -234,10 +231,10 @@ public class Step1 {
     public static class Partition extends Partitioner<Text, Text> {
         @Override
         public int getPartition(Text key, Text value, int numPartitions) {
-            String keyString = key.toString();
+//            String keyString = key.toString();
+//            String firstWord = keyString.substring(1, keyString.indexOf(",") > 0 ? keyString.indexOf(",") : keyString.length() - 1).trim();
             // Extract the first word inside the brackets
-            String firstWord = keyString.substring(1, keyString.indexOf(",") > 0 ? keyString.indexOf(",") : keyString.length() - 1).trim();
-            return Math.abs(firstWord.hashCode() % numPartitions);
+            return Math.abs(key.hashCode() % numPartitions);
         }
     }
 

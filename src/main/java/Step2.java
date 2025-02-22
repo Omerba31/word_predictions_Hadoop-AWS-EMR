@@ -21,8 +21,9 @@ import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
 import org.apache.hadoop.mapreduce.lib.output.TextOutputFormat;
 
 public class Step2 {
-    public static final String OUTPUT_STEP1_PATH = "s3://dsp-02-buckets/output_step_1/";
-    public static final String OUTPUT_STEP2_PATH = "s3://dsp-02-buckets/output_step_2/";
+    static String bucketPath = "s3://dsp-02-bucket";
+    public static final String OUTPUT_STEP1_PATH = bucketPath + "/output_step_1/";
+    public static final String OUTPUT_STEP2_PATH = bucketPath + "/output_step_2/";
     public static long C0;
 
     public static class Map extends Mapper<LongWritable, Text, Text, Text> {
@@ -30,7 +31,7 @@ public class Step2 {
         @Override
         protected void setup(Context context) throws IOException {
             FileSystem fs = FileSystem.get(context.getConfiguration());
-            Path path = new Path("s3://dsp-02-bucket/vars/C0.txt");
+            Path path = new Path(bucketPath + "/vars/C0.txt");
             try (BufferedReader br = new BufferedReader(new InputStreamReader(fs.open(path)))) {
                 Step2.C0 = Long.parseLong(br.readLine());
             }
