@@ -15,7 +15,7 @@ public class Main {
     public static AmazonEC2 ec2;
     public static AmazonElasticMapReduce emr;
 
-    public static final String LOG_PATH = "s3://dsp-02-bucket/logs/";
+    public static final String LOG_PATH = "s3://dsp-02-buckets/logs/";
 
     public static void main(String[] args) {
         credentialsProvider = new ProfileCredentialsProvider();
@@ -33,7 +33,7 @@ public class Main {
                 .build();
 
         HadoopJarStepConfig step1 = new HadoopJarStepConfig()
-                .withJar("s3://dsp-02-bucket/jars/step1.jar")
+                .withJar("s3://dsp-02-buckets/jars/step1.jar")
                 .withMainClass("Step1");
 
         StepConfig stepConfig1 = new StepConfig()
@@ -42,7 +42,7 @@ public class Main {
                 .withActionOnFailure("TERMINATE_JOB_FLOW");
 
         HadoopJarStepConfig step2 = new HadoopJarStepConfig()
-                .withJar("s3://dsp-02-bucket/jars/step2.jar")
+                .withJar("s3://dsp-02-buckets/jars/step2.jar")
                 .withMainClass("Step2");
 
         StepConfig stepConfig2 = new StepConfig()

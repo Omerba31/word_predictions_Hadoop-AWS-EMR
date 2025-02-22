@@ -21,8 +21,8 @@ import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
 import org.apache.hadoop.mapreduce.lib.output.TextOutputFormat;
 
 public class Step2 {
-    public static final String OUTPUT_STEP1_PATH = "s3://dsp-02-bucket/output_step_1/";
-    public static final String OUTPUT_STEP2_PATH = "s3://dsp-02-bucket/output_step_2/";
+    public static final String OUTPUT_STEP1_PATH = "s3://dsp-02-buckets/output_step_1/";
+    public static final String OUTPUT_STEP2_PATH = "s3://dsp-02-buckets/output_step_2/";
     public static long C0;
 
     public static class Map extends Mapper<LongWritable, Text, Text, Text> {
@@ -134,7 +134,10 @@ public class Step2 {
     public static class Partition extends Partitioner<Text, Text> {
         @Override
         public int getPartition(Text key, Text value, int numPartitions) {
-            return Math.abs(key.hashCode() % numPartitions);
+            String keyString = key.toString();
+            // Extract the first word inside the brackets
+            String firstWord = keyString.substring(1, keyString.indexOf(",") > 0 ? keyString.indexOf(",") : keyString.length() - 1).trim();
+            return Math.abs(firstWord.hashCode() % numPartitions);
         }
     }
 

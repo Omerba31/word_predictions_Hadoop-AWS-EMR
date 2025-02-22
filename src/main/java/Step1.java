@@ -25,10 +25,10 @@ public class Step1 {
 //    public static final String INPUT_PATH_2GRAM = "s3://datasets.elasticmapreduce/ngrams/books/20090715/heb-all/2gram/data";
 //    public static final String INPUT_PATH_3GRAM = "s3://datasets.elasticmapreduce/ngrams/books/20090715/heb-all/3gram/data";
 
-    public static final String INPUT_PATH_1GRAM = "s3://dsp-02-bucket/grams/1gram";
-    public static final String INPUT_PATH_2GRAM = "s3://dsp-02-bucket/grams/2gram";
-    public static final String INPUT_PATH_3GRAM = "s3://dsp-02-bucket/grams/3gram";
-    public static final String OUTPUT_STEP1_PATH = "s3://dsp-02-bucket/output_step_1/";
+    public static final String INPUT_PATH_1GRAM = "s3://dsp-02-buckets/grams/1gram";
+    public static final String INPUT_PATH_2GRAM = "s3://dsp-02-buckets/grams/2gram";
+    public static final String INPUT_PATH_3GRAM = "s3://dsp-02-buckets/grams/3gram";
+    public static final String OUTPUT_STEP1_PATH = "s3://dsp-02-buckets/output_step_1/";
 
     private final static Set<String> stopWords = new HashSet<>();
 
@@ -59,6 +59,9 @@ public class Step1 {
             };
             Collections.addAll(stopWords, stopWordsArr);
         }
+        private boolean isValidToken(String token) {
+            return token.matches("[א-ת]+");
+        }
 
         @Override
         protected void map(LongWritable key, Text value, Context context) throws IOException, InterruptedException {
@@ -74,14 +77,18 @@ public class Step1 {
             }
 
             boolean containsStopWord = false;
+            boolean containsNonHebrew = false;
             for (String word : words) {
                 if (stopWords.contains(word)) {
                     containsStopWord = true;
                     break;
                 }
+                if (!isValidToken(word)) {
+                    containsNonHebrew = true;
+                    break;}
             }
 
-            if (!containsStopWord) {
+            if (!containsStopWord && !containsNonHebrew){
                 // Construct keys based on n-gram length
                 String keyString;
                 String totalOccurrences = "<**>";
@@ -227,9 +234,13 @@ public class Step1 {
     public static class Partition extends Partitioner<Text, Text> {
         @Override
         public int getPartition(Text key, Text value, int numPartitions) {
-            return Math.abs(key.hashCode() % numPartitions);
+            String keyString = key.toString();
+            // Extract the first word inside the brackets
+            String firstWord = keyString.substring(1, keyString.indexOf(",") > 0 ? keyString.indexOf(",") : keyString.length() - 1).trim();
+            return Math.abs(firstWord.hashCode() % numPartitions);
         }
     }
+
 
     public static void main(String[] args) throws Exception {
 
