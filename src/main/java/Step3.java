@@ -1,5 +1,4 @@
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.io.LongWritable;
 import org.apache.hadoop.io.Text;
 import org.apache.hadoop.io.WritableComparable;
@@ -8,16 +7,12 @@ import org.apache.hadoop.mapreduce.Job;
 import org.apache.hadoop.mapreduce.Mapper;
 import org.apache.hadoop.mapreduce.Partitioner;
 import org.apache.hadoop.mapreduce.Reducer;
-import org.apache.hadoop.mapreduce.lib.input.FileInputFormat;
 import org.apache.hadoop.mapreduce.lib.input.TextInputFormat;
-import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
 import org.apache.hadoop.mapreduce.lib.output.TextOutputFormat;
 
 import java.io.IOException;
 
 public class Step3 {
-    public static final String OUTPUT_STEP2_PATH = "s3://dsp-02-buckets/output_step_2/";
-    public static final String OUTPUT_STEP3_PATH = "s3://dsp-02-buckets/output_step_3/";
 
     private static class Map extends Mapper<LongWritable, Text, Text, Text> {
 
@@ -91,8 +86,8 @@ public class Step3 {
         job.setInputFormatClass(TextInputFormat.class);
         job.setOutputFormatClass(TextOutputFormat.class);
         job.setSortComparatorClass(Step3.Comparison.class);
-        FileInputFormat.addInputPath(job, new Path(OUTPUT_STEP2_PATH));
-        FileOutputFormat.setOutputPath(job, new Path(OUTPUT_STEP3_PATH));
+        TextInputFormat.addInputPath(job, Config.OUTPUT_STEP_2);
+        TextOutputFormat.setOutputPath(job, Config.OUTPUT_STEP_3);
         System.exit(job.waitForCompletion(true) ? 0 : 1);
     }
 }
