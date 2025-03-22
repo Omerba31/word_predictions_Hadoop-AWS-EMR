@@ -19,10 +19,8 @@ public class Step3 {
         @Override
         public void map(LongWritable key, Text value, Context context) throws IOException, InterruptedException {
             String[] keyValue = value.toString().split("\t");
-            if (keyValue.length != 2)
-                return; // Skip malformed lines
+            if (keyValue.length != 2) return; // Skip malformed lines
 
-            // Output the key and value as is
             context.write(new Text(keyValue[0]), new Text(keyValue[1]));
         }
     }
@@ -60,9 +58,7 @@ public class Step3 {
 
             // Compare w1,w2 lexicographically
             int cmp = (parts1[0] + "," + parts1[1]).compareTo(parts2[0] + "," + parts2[1]);
-            if (cmp != 0) {
-                return cmp; // If w1,w2 differ, sort lexicographically
-            }
+            if (cmp != 0) return cmp; // If w1,w2 differ, sort lexicographically
 
             // If w1,w2 are the same, compare probabilities descending
             double prob1 = Double.parseDouble(parts1[2]);
@@ -73,21 +69,36 @@ public class Step3 {
 
 
     public static void main(String[] args) throws Exception {
+        System.out.println("[DEBUG] STEP 2 started!");
         Configuration conf = new Configuration();
         Job job = Job.getInstance(conf);
+
         job.setJarByClass(Step3.class);
+
+        // Mapper class
+        job.setMapperClass(Map.class);
+        job.setMapOutputKeyClass(Text.class);
+        job.setMapOutputValueClass(Text.class);
+
+        // Reducer class
+        job.setReducerClass(Reduce.class);
         job.setOutputKeyClass(Text.class);
         job.setOutputValueClass(Text.class);
-        job.setMapperClass(Map.class);
-        job.setSortComparatorClass(Step3.Comparison.class);
-        job.setReducerClass(Reduce.class);
+
+        // Custom Partitioner / Comparator
         job.setPartitionerClass(Step3.Partition.class);
+        job.setSortComparatorClass(Step3.Comparison.class);
+
         job.setNumReduceTasks(1);
+
+        // Input/output formats
         job.setInputFormatClass(TextInputFormat.class);
         job.setOutputFormatClass(TextOutputFormat.class);
-        job.setSortComparatorClass(Step3.Comparison.class);
+
+        // Input and output paths
         TextInputFormat.addInputPath(job, Config.OUTPUT_STEP_2);
         TextOutputFormat.setOutputPath(job, Config.OUTPUT_STEP_3);
+
         System.exit(job.waitForCompletion(true) ? 0 : 1);
     }
 }

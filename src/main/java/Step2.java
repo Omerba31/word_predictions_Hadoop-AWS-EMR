@@ -3,10 +3,12 @@ import org.apache.hadoop.io.Text;
 import org.apache.hadoop.mapreduce.Mapper;
 import org.apache.hadoop.mapreduce.Partitioner;
 import org.apache.hadoop.mapreduce.Reducer;
+
 import java.io.IOException;
 import java.util.List;
 import java.util.ArrayList;
 import java.util.Iterator;
+
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.mapreduce.Job;
 import org.apache.hadoop.mapreduce.lib.input.TextInputFormat;
@@ -14,7 +16,7 @@ import org.apache.hadoop.mapreduce.lib.output.TextOutputFormat;
 
 public class Step2 {
 
-    public static long C0 = 0 ;
+    public static long C0 = 0;
 
     public static class Map extends Mapper<LongWritable, Text, Text, Text> {
 
@@ -27,22 +29,22 @@ public class Step2 {
 //            }
 //        }
 
-            @Override
-            protected void map(LongWritable key, Text value, Context context) throws IOException, InterruptedException {
-                String line = value.toString();
-                String[] parts = line.split("\t");
+        @Override
+        protected void map(LongWritable key, Text value, Context context) throws IOException, InterruptedException {
+            String line = value.toString();
+            String[] parts = line.split("\t");
 
-                if (parts.length == 1) {
-                    // This is the C0 line, accumulate total word count
-                    C0 += Long.parseLong(parts[0]);
-                } else {
-                    // Forward the key-value pair as-is to the reducer
-                    String keyPart = parts[0].trim();
-                    String valuePart = parts[1].trim();
-                    context.write(new Text(keyPart), new Text(valuePart));
-                }
+            if (parts.length == 1) {
+                // This is the C0 line, accumulate total word count
+                C0 += Long.parseLong(parts[0]);
+
+            } else {
+                // Forward the key-value pair as-is to the reducer
+                Text newKey = new Text(parts[0].trim()), newValue = new Text(parts[1].trim());
+                context.write(newKey, newValue);
             }
         }
+    }
 
 //    public static class Combiner extends Reducer<Text, Text, Text, Text> {
 //        @Override
@@ -56,57 +58,86 @@ public class Step2 {
 //    }
 
     public static class Reduce extends Reducer<Text, Text, Text, Text> {
-        private String N1 = null;
-        private String N2 = null;
-        List<Text> combinedValues = new ArrayList<>();
+
+        String[] newValues; //NEW
 
         @Override
         public void reduce(Text key, Iterable<Text> values, Context context) throws IOException, InterruptedException {
             String keyString = key.toString();
             String[] keyParts = keyString.split("\\s+");
+            Text newKey, newValue;
 
-            if (keyParts.length == 2) {
-                // Value string contains: N1, N2
-                N1 = values.iterator().next().toString();
-                N2 = values.iterator().next().toString();
+            outerLoop:
+            for (Text value : values) {
 
-            } else {
-                // This is a trigram (w1,w2,w3)
-                // Value string contains: N3, C1, C2
+                String valueString = value.toString();
+                String[] valueParts = valueString.split("\\s+");
 
-                // Create a list to include N1, N2, and existing values
-                combinedValues.clear();
+                if (keyParts.length == 2) {
+                    newValues = new String[5];
 
-                // Add N1 and N2 as Text objects
-                combinedValues.add(new Text(N1));
-                combinedValues.add(new Text(N2));
+                    if (valueParts.length < 2)
+                        System.err.println("[ERROR] Invalid value format: " + valueParts[0]);
 
-                // Add the Value string that contains: N3, C1, C2 to combinedValues
-                values.forEach(combinedValues::add);
+                    else {
+                        newValues[0] = valueParts[0];
+                        newValues[1] = valueParts[1];
+                    }
 
-                // Process the combined values with an iterator
-                Iterator<Text> iterator = combinedValues.iterator();
-                double probability = getProbability(iterator);
-                // Reorder w3,w2,w1 -> w1,w2,w3 and emit with probability
-                String newKey = keyParts[2] + " " + keyParts[1] + " " + keyParts[0];
-                context.write((new Text( newKey)), new Text(String.valueOf(probability)));
+                } else {
+
+                    // This is a trigram (w1,w2,w3)
+                    // Value string contains: N3, C1, C2
+
+                    if (valueParts.length < 3)
+                        System.err.println("[ERROR] Invalid value format: " + valueParts[0]);
+
+                    else {
+                        newValues[2] = valueParts[0]; // N3
+                        newValues[3] = valueParts[1]; // C1
+                        newValues[4] = valueParts[2]; // C2
+
+                        for (String _newValue : newValues)
+                            if (_newValue == null) continue outerLoop; // option: change to return
+
+                        // Reorder w3,w2,w1 -> w1,w2,w3 and emit with probability
+                        newKey = new Text(keyParts[2] + " " + keyParts[1] + " " + keyParts[0]);
+
+                        double probability = getProbability(newValues);
+                        newValue = new Text(String.valueOf(probability));
+
+                        newValues = new String[5]; // Reset for next iteration // NEW
+
+                        context.write(newKey, newValue);
+                    }
+                }
             }
         }
 
-        private double getProbability(Iterator<Text> iterator) {
-            long N1 = Long.parseLong(iterator.next().toString());
-            long N2 = Long.parseLong(iterator.next().toString());
-            long N3 = Long.parseLong(iterator.next().toString());
-            long C1 = Long.parseLong(iterator.next().toString());
-            long C2 = Long.parseLong(iterator.next().toString());
+        private double getProbability(String[] valueParts) {
+
+            for (String value : valueParts) {
+                if (value == null || value.isEmpty()) {
+                    System.err.println("[ERROR] Value is null");
+                    return 0.0;
+                }
+            }
+
+            for (String value : valueParts) if (value.equals("0")) return 0.0;
+
+            long N1 = Long.parseLong(valueParts[0]);
+            long N2 = Long.parseLong(valueParts[1]);
+            long N3 = Long.parseLong(valueParts[2]);
+            long C1 = Long.parseLong(valueParts[3]);
+            long C2 = Long.parseLong(valueParts[4]);
 
             // Calculate weights k2 and k3
             double k2 = (Math.log(N2 + 1) + 1) / (Math.log(N2 + 1) + 2);  // k2 = log(N2 + 1) + 1 / (log(N2 + 1) + 2)
             double k3 = (Math.log(N3 + 1) + 1) / (Math.log(N3 + 1) + 2);  // k3 = log(N3 + 1) + 1 / (log(N3 + 1) + 2)
 
             // Calculate the probability components
-            double P1 = (double) N3 / C2;      // P(w3 | w1, w2)
-            double P2 = (double) N2 / C1;      // P(w3 | w2)
+            double P1 = (double) N3 / C2; // P(w3 | w1, w2)
+            double P2 = (double) N2 / C1; // P(w3 | w2)
             double P3 = (double) N1 / C0; // P(w3)
 
             // Combine the components using the Thede & Harper formula
@@ -122,6 +153,7 @@ public class Step2 {
             String firstWord = parts.length >= 1 ? parts[0] : keyString;
 
             return Math.abs(firstWord.hashCode() % numPartitions);
+            //TODO: should be by first and second word?
         }
     }
 

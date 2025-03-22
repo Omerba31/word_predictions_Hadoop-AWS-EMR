@@ -9,6 +9,12 @@ import com.amazonaws.services.ec2.AmazonEC2ClientBuilder;
 import com.amazonaws.services.elasticmapreduce.AmazonElasticMapReduce;
 import com.amazonaws.services.elasticmapreduce.AmazonElasticMapReduceClientBuilder;
 import com.amazonaws.services.elasticmapreduce.model.*;
+import com.amazonaws.services.s3.model.DeleteObjectsRequest;
+import com.amazonaws.services.s3.model.ObjectListing;
+import com.amazonaws.services.s3.model.S3ObjectSummary;
+
+import java.util.ArrayList;
+import java.util.List;
 
 public class Main {
     public static AWSCredentialsProvider credentialsProvider;
@@ -77,7 +83,39 @@ public class Main {
                 .withJobFlowRole("EMR_EC2_DefaultRole")
                 .withReleaseLabel("emr-5.11.0");
 
+        cleanS3Directory("logs/");
+        cleanS3Directory("output/");
+
         RunJobFlowResult runJobFlowResult = emr.runJobFlow(runFlowRequest);
         System.out.println("Job flow started with ID: " + runJobFlowResult.getJobFlowId());
     }
+
+    public static void cleanS3Directory(String dirName) {
+        if (dirName == null || dirName.trim().isEmpty()) {
+            throw new IllegalArgumentException("Directory name cannot be null or empty");
+        }
+
+        System.out.println("Cleaning S3 directory: " + dirName);
+
+        ObjectListing objectListing = S3.listObjects(Config.BUCKET_NAME, dirName);
+        while (true) {
+            List<DeleteObjectsRequest.KeyVersion> keysToDelete = new ArrayList<>();
+            for (S3ObjectSummary summary : objectListing.getObjectSummaries()) {
+                keysToDelete.add(new DeleteObjectsRequest.KeyVersion(summary.getKey()));
+            }
+
+            if (!keysToDelete.isEmpty()) {
+                DeleteObjectsRequest deleteRequest = new DeleteObjectsRequest(Config.BUCKET_NAME)
+                        .withKeys(keysToDelete);
+                S3.deleteObjects(deleteRequest);
+            }
+
+            if (objectListing.isTruncated()) {
+                objectListing = S3.listNextBatchOfObjects(objectListing);
+            } else {
+                break;
+            }
+        }
+    }
+
 }
