@@ -1,5 +1,6 @@
 import com.amazonaws.auth.AWSCredentialsProvider;
 import com.amazonaws.auth.profile.ProfileCredentialsProvider;
+import com.amazonaws.services.ec2.model.InstanceType;
 import com.amazonaws.services.s3.AmazonS3;
 import com.amazonaws.services.s3.AmazonS3ClientBuilder;
 //import com.amazonaws.services.elasticmapreduce.model.InstanceType;
@@ -14,65 +15,64 @@ public class Main {
     public static AmazonS3 S3;
     public static AmazonEC2 ec2;
     public static AmazonElasticMapReduce emr;
-
-    static String bucketPath = "s3://dsp-02-bucket";
-    public static final String LOG_PATH = bucketPath + "/logs/";
+    public static final int numberOfInstances = 7;
 
     public static void main(String[] args) {
         credentialsProvider = new ProfileCredentialsProvider();
         ec2 = AmazonEC2ClientBuilder.standard()
                 .withCredentials(credentialsProvider)
-                .withRegion("us-east-1")
+                .withRegion(Config.REGION)
                 .build();
         S3 = AmazonS3ClientBuilder.standard()
                 .withCredentials(credentialsProvider)
-                .withRegion("us-east-1")
+                .withRegion(Config.REGION)
                 .build();
         emr = AmazonElasticMapReduceClientBuilder.standard()
                 .withCredentials(credentialsProvider)
-                .withRegion("us-east-1")
+                .withRegion(Config.REGION)
                 .build();
 
-        HadoopJarStepConfig step1 = new HadoopJarStepConfig()
-                .withJar(bucketPath + "/jars/step1.jar")
+        HadoopJarStepConfig Step1_jar = new HadoopJarStepConfig()
+                .withJar("s3://" + Config.BUCKET_NAME + "/jars/Step1.jar")
                 .withMainClass("Step1");
 
-        StepConfig stepConfig1 = new StepConfig()
+        StepConfig Step1_Config = new StepConfig()
                 .withName("Step1")
-                .withHadoopJarStep(step1)
+                .withHadoopJarStep(Step1_jar)
                 .withActionOnFailure("TERMINATE_JOB_FLOW");
 
-        HadoopJarStepConfig step2 = new HadoopJarStepConfig()
-                .withJar(bucketPath + "/jars/step2.jar")
+        HadoopJarStepConfig Step2_jar = new HadoopJarStepConfig()
+                .withJar("s3://" + Config.BUCKET_NAME + "/jars/Step2.jar")
                 .withMainClass("Step2");
 
-        StepConfig stepConfig2 = new StepConfig()
+        StepConfig Step2_Config = new StepConfig()
                 .withName("Step2")
-                .withHadoopJarStep(step2)
+                .withHadoopJarStep(Step2_jar)
                 .withActionOnFailure("TERMINATE_JOB_FLOW");
 
-        HadoopJarStepConfig step3 = new HadoopJarStepConfig()
-                .withJar(bucketPath + "/jars/step3.jar")
+        HadoopJarStepConfig Step3_jar = new HadoopJarStepConfig()
+                .withJar("s3://" + Config.BUCKET_NAME + "/jars/Step3.jar")
                 .withMainClass("Step3");
 
-        StepConfig stepConfig3 = new StepConfig()
+        StepConfig Step3_Config = new StepConfig()
                 .withName("Step3")
-                .withHadoopJarStep(step3)
+                .withHadoopJarStep(Step3_jar)
                 .withActionOnFailure("TERMINATE_JOB_FLOW");
 
         JobFlowInstancesConfig instances = new JobFlowInstancesConfig()
-                .withInstanceCount(10)
-                .withMasterInstanceType("m4.large")
-                .withSlaveInstanceType("m4.large")
-                .withHadoopVersion("2.9.2")
+                .withInstanceCount(numberOfInstances)
+                .withMasterInstanceType(InstanceType.M4Large.toString())
+                .withSlaveInstanceType(InstanceType.M4Large.toString())
+                .withHadoopVersion("3.4.1")
+                .withEc2KeyName("vockey")
                 .withKeepJobFlowAliveWhenNoSteps(false)
                 .withPlacement(new PlacementType("us-east-1a"));
 
         RunJobFlowRequest runFlowRequest = new RunJobFlowRequest()
-                .withName("Word Prediction")
+                .withName("Map reduce project")
                 .withInstances(instances)
-                .withSteps(stepConfig1, stepConfig2, stepConfig3)
-                .withLogUri(LOG_PATH)
+                .withSteps(Step1_Config, Step2_Config, Step3_Config)
+                .withLogUri(Config.LOGS)
                 .withServiceRole("EMR_DefaultRole")
                 .withJobFlowRole("EMR_EC2_DefaultRole")
                 .withReleaseLabel("emr-5.11.0");
