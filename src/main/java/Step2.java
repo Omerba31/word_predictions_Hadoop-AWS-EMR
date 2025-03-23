@@ -3,59 +3,38 @@ import org.apache.hadoop.io.Text;
 import org.apache.hadoop.mapreduce.Mapper;
 import org.apache.hadoop.mapreduce.Partitioner;
 import org.apache.hadoop.mapreduce.Reducer;
-
-import java.io.IOException;
-import java.util.List;
-import java.util.ArrayList;
-import java.util.Iterator;
-
+import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.mapreduce.Job;
 import org.apache.hadoop.mapreduce.lib.input.TextInputFormat;
 import org.apache.hadoop.mapreduce.lib.output.TextOutputFormat;
 
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.io.IOException;
+
 public class Step2 {
 
-    public static long C0 = 0;
 
     public static class Map extends Mapper<LongWritable, Text, Text, Text> {
 
-//        @Override
-//        protected void setup(Context context) throws IOException {
-//            FileSystem fs = FileSystem.get(context.getConfiguration());
-//            Path path = new Path("s3://dsp-02-bucket/vars/C0.txt");
-//            try (BufferedReader br = new BufferedReader(new InputStreamReader(fs.open(path)))) {
-//                Step2.C0 = Long.parseLong(br.readLine());
-//            }
-//        }
-
         @Override
         protected void map(LongWritable key, Text value, Context context) throws IOException, InterruptedException {
-            String line = value.toString();
-            String[] parts = line.split("\t");
 
-            if (parts.length == 1) {
-                // This is the C0 line, accumulate total word count
-                C0 += Long.parseLong(parts[0]);
+            String[] fields = value.toString().split("\t");
 
-            } else {
-                // Forward the key-value pair as-is to the reducer
-                Text newKey = new Text(parts[0].trim()), newValue = new Text(parts[1].trim());
-                context.write(newKey, newValue);
+            if (fields.length != 2 && fields.length != 3) {
+                System.err.println("[ERROR] Invalid input format: " + value.toString());
+                return;
             }
+
+            // Forward the key-value pair as-is to the reducer
+            Text newKey = new Text(fields[0].trim()), newValue = new Text(fields[1].trim());
+            context.write(newKey, newValue);
+
         }
     }
-
-//    public static class Combiner extends Reducer<Text, Text, Text, Text> {
-//        @Override
-//        protected void reduce(Text key, Iterable<Text> values, Context context) throws IOException, InterruptedException {
-//            long sum = 0;
-//            for (Text value : values) {
-//                sum += Long.parseLong(value.toString());
-//            }
-//            context.write(key, new Text(String.valueOf(sum)));
-//        }
-//    }
 
     public static class Reduce extends Reducer<Text, Text, Text, Text> {
 
@@ -66,6 +45,7 @@ public class Step2 {
             String keyString = key.toString();
             String[] keyParts = keyString.split("\\s+");
             Text newKey, newValue;
+            long c0 = context.getConfiguration().getLong("c0_value", 1L);
 
             outerLoop:
             for (Text value : values) {
@@ -103,7 +83,7 @@ public class Step2 {
                         // Reorder w3,w2,w1 -> w1,w2,w3 and emit with probability
                         newKey = new Text(keyParts[2] + " " + keyParts[1] + " " + keyParts[0]);
 
-                        double probability = getProbability(newValues);
+                        double probability = getProbability(newValues, c0);
                         newValue = new Text(String.valueOf(probability));
 
                         newValues = new String[5]; // Reset for next iteration // NEW
@@ -114,7 +94,7 @@ public class Step2 {
             }
         }
 
-        private double getProbability(String[] valueParts) {
+        private double getProbability(String[] valueParts, long C0) {
 
             for (String value : valueParts) {
                 if (value == null || value.isEmpty()) {
@@ -123,17 +103,28 @@ public class Step2 {
                 }
             }
 
-            for (String value : valueParts) if (value.equals("0")) return 0.0;
-
             long N1 = Long.parseLong(valueParts[0]);
             long N2 = Long.parseLong(valueParts[1]);
             long N3 = Long.parseLong(valueParts[2]);
             long C1 = Long.parseLong(valueParts[3]);
             long C2 = Long.parseLong(valueParts[4]);
 
+//            long C0 = getFromS3(context, Config.PATH_C0);
+
+            if (C2 == 0 | C1 == 0 | C0 == 0) {
+                System.err.println("[ERROR] C2, C1 or C0 is zero");
+                return 0.0;
+            }
+
             // Calculate weights k2 and k3
-            double k2 = (Math.log(N2 + 1) + 1) / (Math.log(N2 + 1) + 2);  // k2 = log(N2 + 1) + 1 / (log(N2 + 1) + 2)
-            double k3 = (Math.log(N3 + 1) + 1) / (Math.log(N3 + 1) + 2);  // k3 = log(N3 + 1) + 1 / (log(N3 + 1) + 2)
+            double v = Math.log(N2 + 1) / Math.log(2);
+            double k2 = (v + 1) / (v + 2);
+
+            double v1 = Math.log(N3 + 1) / Math.log(2);
+            double k3 = (v1 + 1) / (v1 + 2);
+
+//            double k2 = (Math.log(N2 + 1) + 1) / (Math.log(N2 + 1) + 2);  // k2 = log(N2 + 1) + 1 / (log(N2 + 1) + 2)
+//            double k3 = (Math.log(N3 + 1) + 1) / (Math.log(N3 + 1) + 2);  // k3 = log(N3 + 1) + 1 / (log(N3 + 1) + 2)
 
             // Calculate the probability components
             double P1 = (double) N3 / C2; // P(w3 | w1, w2)

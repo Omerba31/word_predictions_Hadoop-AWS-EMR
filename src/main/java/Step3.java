@@ -53,8 +53,8 @@ public class Step3 {
         @Override
         public int compare(WritableComparable key1, WritableComparable key2) {
             // Extract components: <w1,w2,w3>
-            String[] parts1 = key1.toString().substring(1, key1.toString().length() - 1).split(",");
-            String[] parts2 = key2.toString().substring(1, key2.toString().length() - 1).split(",");
+            String[] parts1 = key1.toString().split("\\s+");
+            String[] parts2 = key2.toString().split("\\s+");
 
             // Compare w1,w2 lexicographically
             int cmp = (parts1[0] + "," + parts1[1]).compareTo(parts2[0] + "," + parts2[1]);
@@ -63,6 +63,7 @@ public class Step3 {
             // If w1,w2 are the same, compare probabilities descending
             double prob1 = Double.parseDouble(parts1[2]);
             double prob2 = Double.parseDouble(parts2[2]);
+
             return Double.compare(prob2, prob1);
         }
     }

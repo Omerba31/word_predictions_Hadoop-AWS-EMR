@@ -1,4 +1,5 @@
 
+import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.io.IntWritable;
 import org.apache.hadoop.io.LongWritable;
 import org.apache.hadoop.io.Text;
@@ -8,7 +9,14 @@ import org.apache.hadoop.mapreduce.Reducer;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.mapreduce.Job;
 import org.apache.hadoop.mapreduce.lib.output.TextOutputFormat;
+import org.apache.hadoop.fs.FileSystem;
 
+import org.apache.hadoop.fs.FSDataOutputStream;
+import java.net.URI;
+
+
+
+import java.io.OutputStream;
 import java.io.IOException;
 import java.util.Collections;
 import java.util.Set;
@@ -72,7 +80,6 @@ public class Step1 {
                 if (words.length == 1) {
                     // C1 and N1
                     newKey = new Text(words[0]);
-
                     context.write(newKey, newValue);
                     // C0
                     newKey = new Text("**"); // total occurrences
@@ -116,7 +123,10 @@ public class Step1 {
     }
 
     public static class Reduce extends Reducer<Text, IntWritable, Text, Text> {
-        private int c0_Occurrences = 0;
+        private enum Counters {
+            c0_Occurrences
+        }
+
         private int c1_Occurrences = 0;
         private int n2_Occurrences = 0;
         private int n3_Occurrences = 0;
@@ -135,12 +145,9 @@ public class Step1 {
             String[] keyWords = keyString.split("\\s+");
 
             if (keyString.equals("**")) {
-                for (IntWritable value : values) c0_Occurrences += value.get(); // C0 case
-
-                newKey = new Text(keyString);
-                newValue = new Text(Integer.toString(c0_Occurrences));
-
-                context.write(newKey, newValue);
+                int sum = 0;
+                for (IntWritable value : values) sum += value.get(); // C0 case
+                context.getCounter(Counters.c0_Occurrences).increment(sum);
 
             } else if (keyWords.length == 1) { // C1 and N1 case
                 if (currentOneGram.isEmpty() || !(currentOneGram.equals(keyString))) {
@@ -182,6 +189,14 @@ public class Step1 {
 
                     context.write(newKey, newValue);
                 }
+            }
+        }
+
+
+        private void saveToS3(Context context, int value, Path path) throws IOException {
+            FileSystem fs = FileSystem.get(context.getConfiguration());
+            try (OutputStream out = fs.create(path, true)) {
+                out.write(Long.toString(value).getBytes());
             }
         }
 
@@ -258,6 +273,15 @@ public class Step1 {
 
         // Set output path
         TextOutputFormat.setOutputPath(job, Config.OUTPUT_STEP_1);
+
+        boolean success = job.waitForCompletion(true);
+        if (success) {
+            FileSystem fs = FileSystem.get(new URI("s3://" + Config.BUCKET_NAME), conf);
+            long c0 = job.getCounters().findCounter(Reduce.Counters.c0_Occurrences).getValue();
+            FSDataOutputStream out = fs.create(Config.PATH_C0);
+            out.writeBytes("c0_value: " + c0 + "\n");
+            out.close();
+        }
 
         // Launch the job and exit based on its success
         System.exit(job.waitForCompletion(true) ? 0 : 1);
