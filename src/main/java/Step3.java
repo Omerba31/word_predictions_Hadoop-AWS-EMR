@@ -18,20 +18,27 @@ public class Step3 {
 
         @Override
         public void map(LongWritable key, Text value, Context context) throws IOException, InterruptedException {
-            String[] keyValue = value.toString().split("\t");
-            if (keyValue.length != 2) return; // Skip malformed lines
+            String[] parts = value.toString().trim().split("\t");
+            if (parts.length != 2) return;
 
-            context.write(new Text(keyValue[0]), new Text(keyValue[1]));
+            String trigram = parts[0];
+            String probability = parts[1];
+
+            Text compositeKey = new Text(trigram + " " + probability);
+            context.write(compositeKey, new Text(""));
         }
-    }
+        }
 
-    private static class Reduce extends Reducer<Text, Text, Text, Text> {
+    public static class Reduce extends Reducer<Text, Text, Text, Text> {
         @Override
         protected void reduce(Text key, Iterable<Text> values, Context context) throws IOException, InterruptedException {
-            // Fetch the single value directly
-            if (values.iterator().hasNext()) {
-                context.write(key, values.iterator().next());
-            }
+            String[] parts = key.toString().split("\\s+");
+            if (parts.length < 4) return;
+
+            String trigram = parts[0] + " " + parts[1] + " " + parts[2];
+            String prob = parts[3];
+
+            context.write(new Text(trigram), new Text(prob));
         }
     }
 
@@ -39,9 +46,12 @@ public class Step3 {
         @Override
         public int getPartition(Text key, Text value, int numPartitions) {
             String keyString = key.toString();
-            // Extract the first word inside the brackets
-            String firstWord = keyString.substring(1, keyString.indexOf(",") > 0 ? keyString.indexOf(",") : keyString.length() - 1).trim();
-            return Math.abs(firstWord.hashCode() % numPartitions);
+            String[] parts = keyString.split("\\s+");
+
+            // Extract w1 and w2 (first and second word)
+            String w1w2 = parts.length >= 2 ? parts[0] + " " + parts[1] : keyString;
+
+            return Math.abs(w1w2.hashCode() % numPartitions);
         }
     }
 
@@ -52,18 +62,18 @@ public class Step3 {
 
         @Override
         public int compare(WritableComparable key1, WritableComparable key2) {
-            // Extract components: <w1,w2,w3>
             String[] parts1 = key1.toString().split("\\s+");
             String[] parts2 = key2.toString().split("\\s+");
 
-            // Compare w1,w2 lexicographically
-            int cmp = (parts1[0] + "," + parts1[1]).compareTo(parts2[0] + "," + parts2[1]);
-            if (cmp != 0) return cmp; // If w1,w2 differ, sort lexicographically
+            // Compare by w1 + w2
+            String w1w2_1 = parts1[0] + " " + parts1[1];
+            String w1w2_2 = parts2[0] + " " + parts2[1];
+            int cmp = w1w2_1.compareTo(w1w2_2);
+            if (cmp != 0) return cmp;
 
-            // If w1,w2 are the same, compare probabilities descending
-            double prob1 = Double.parseDouble(parts1[2]);
-            double prob2 = Double.parseDouble(parts2[2]);
-
+            // Compare by probability DESC
+            double prob1 = Double.parseDouble(parts1[3]); // last part is probability
+            double prob2 = Double.parseDouble(parts2[3]);
             return Double.compare(prob2, prob1);
         }
     }

@@ -39,14 +39,31 @@ public class Step2 {
     public static class Reduce extends Reducer<Text, Text, Text, Text> {
 
         String[] newValues; //NEW
+        private long C0 = 1L; // fallback default
+
+        @Override
+        protected void setup(Context context) throws IOException, InterruptedException {
+            Configuration conf = context.getConfiguration();
+            Path path = Config.PATH_C0;
+            FileSystem fs = path.getFileSystem(conf);
+
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(fs.open(path)))) {
+                String line = reader.readLine();
+                if (line != null && !line.isEmpty()) {
+                    C0 = Long.parseLong(line.trim()); // Assume file contains just a number
+                    System.out.println("[INFO] Loaded C0 from S3 = " + C0);
+                }
+            } catch (Exception e) {
+                System.err.println("[ERROR] Failed to read C0 from S3: " + e.getMessage());
+                throw e;
+            }
+        }
 
         @Override
         public void reduce(Text key, Iterable<Text> values, Context context) throws IOException, InterruptedException {
             String keyString = key.toString();
             String[] keyParts = keyString.split("\\s+");
             Text newKey, newValue;
-            long c0 = context.getConfiguration().getLong("c0_value", 1L);
-
             outerLoop:
             for (Text value : values) {
 
@@ -83,7 +100,7 @@ public class Step2 {
                         // Reorder w3,w2,w1 -> w1,w2,w3 and emit with probability
                         newKey = new Text(keyParts[2] + " " + keyParts[1] + " " + keyParts[0]);
 
-                        double probability = getProbability(newValues, c0);
+                        double probability = getProbability(newValues, C0);
                         newValue = new Text(String.valueOf(probability));
 
                         newValues = new String[5]; // Reset for next iteration // NEW
@@ -95,7 +112,6 @@ public class Step2 {
         }
 
         private double getProbability(String[] valueParts, long C0) {
-
             for (String value : valueParts) {
                 if (value == null || value.isEmpty()) {
                     System.err.println("[ERROR] Value is null");
@@ -103,11 +119,11 @@ public class Step2 {
                 }
             }
 
-            long N1 = Long.parseLong(valueParts[0]);
-            long N2 = Long.parseLong(valueParts[1]);
-            long N3 = Long.parseLong(valueParts[2]);
-            long C1 = Long.parseLong(valueParts[3]);
-            long C2 = Long.parseLong(valueParts[4]);
+            double N1 = Long.parseLong(valueParts[0]);
+            double N2 = Long.parseLong(valueParts[1]);
+            double N3 = Long.parseLong(valueParts[2]);
+            double C1 = Long.parseLong(valueParts[3]);
+            double C2 = Long.parseLong(valueParts[4]);
 
 //            long C0 = getFromS3(context, Config.PATH_C0);
 
@@ -117,22 +133,20 @@ public class Step2 {
             }
 
             // Calculate weights k2 and k3
-            double v = Math.log(N2 + 1) / Math.log(2);
-            double k2 = (v + 1) / (v + 2);
-
-            double v1 = Math.log(N3 + 1) / Math.log(2);
-            double k3 = (v1 + 1) / (v1 + 2);
-
-//            double k2 = (Math.log(N2 + 1) + 1) / (Math.log(N2 + 1) + 2);  // k2 = log(N2 + 1) + 1 / (log(N2 + 1) + 2)
-//            double k3 = (Math.log(N3 + 1) + 1) / (Math.log(N3 + 1) + 2);  // k3 = log(N3 + 1) + 1 / (log(N3 + 1) + 2)
+            double k2 = ((Math.log(N2 + 1) + 1) / (Math.log(N2 + 1) + 2));
+            double k3 = ((Math.log(N3 + 1) + 1) / (Math.log(N3 + 1) + 2));
 
             // Calculate the probability components
-            double P1 = (double) N3 / C2; // P(w3 | w1, w2)
-            double P2 = (double) N2 / C1; // P(w3 | w2)
-            double P3 = (double) N1 / C0; // P(w3)
+            double P1 = N3 / C2; // P(w3 | w1, w2)
+            double P2 = N2 / C1; // P(w3 | w2)
+            double P3 = N1 / C0; // P(w3)
+
+
+//            double P3 = Math.min(1.0, N1 / C0);
 
             // Combine the components using the Thede & Harper formula
-            return k3 * P1 + (1 - k3) * k2 * P2 + (1 - k3) * (1 - k2) * P3;
+            return  ((k3 * P1) + ((1 - k3) * k2 * P2) + ((1 - k3) * (1 - k2) * P3));
+
         }
     }
 
@@ -144,7 +158,6 @@ public class Step2 {
             String firstWord = parts.length >= 1 ? parts[0] : keyString;
 
             return Math.abs(firstWord.hashCode() % numPartitions);
-            //TODO: should be by first and second word?
         }
     }
 

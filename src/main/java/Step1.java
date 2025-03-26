@@ -18,6 +18,7 @@ import java.net.URI;
 
 import java.io.OutputStream;
 import java.io.IOException;
+import java.net.URISyntaxException;
 import java.util.Collections;
 import java.util.Set;
 import java.util.HashSet;
@@ -123,9 +124,8 @@ public class Step1 {
     }
 
     public static class Reduce extends Reducer<Text, IntWritable, Text, Text> {
-        private enum Counters {
-            c0_Occurrences
-        }
+        private long c0_Occurrences = 0L;
+
 
         private int c1_Occurrences = 0;
         private int n2_Occurrences = 0;
@@ -145,9 +145,9 @@ public class Step1 {
             String[] keyWords = keyString.split("\\s+");
 
             if (keyString.equals("**")) {
-                int sum = 0;
-                for (IntWritable value : values) sum += value.get(); // C0 case
-                context.getCounter(Counters.c0_Occurrences).increment(sum);
+                for (IntWritable value : values){
+                    c0_Occurrences += value.get(); // C0 case
+                }
 
             } else if (keyWords.length == 1) { // C1 and N1 case
                 if (currentOneGram.isEmpty() || !(currentOneGram.equals(keyString))) {
@@ -183,6 +183,7 @@ public class Step1 {
                     context.write(newKey, newValue);
 
                 } else {
+                    // Reorder w2,w1,w3 -> w3,w2,w1
                     newKey = new Text(keyWords[2] + " " + keyWords[0] + " " + keyWords[1]); // N3_Key
                     int N3_Value = n3_Occurrences, C2_Value = n2_Occurrences, C1_Value = c1_Occurrences;
                     newValue = new Text(N3_Value + " " + C1_Value + " " + C2_Value);
@@ -200,20 +201,21 @@ public class Step1 {
             }
         }
 
-//        @Override
-//        protected void cleanup(Context context) throws IOException, InterruptedException {
-//            // Push the total sum of words to S3 after the reducer has finished
-//            if (!(c0_Occurrences == 0L)) {
-//                // Initialize counters for occurrences of each type
-//                String totalOccurrences = Long.toString(c0_Occurrences);
-//                FileSystem fs = FileSystem.get(context.getConfiguration());
-//                try (OutputStream out = fs.create(new Path("s3://dsp-02-bucket/vars/C0.txt"))) { // Write to S3
-//                    out.write(totalOccurrences.getBytes());
-//                }
-//                super.cleanup(context);  // Ensure proper cleanup
-//            }
-//        }
+        @Override
+        protected void cleanup(Context context) throws IOException, InterruptedException {
+            Configuration conf = context.getConfiguration();
+            FileSystem fs = Config.PATH_C0.getFileSystem(conf);
+
+            // Optional: only one reducer should write this
+            if (context.getTaskAttemptID().getTaskID().getId() == 0) {
+                FSDataOutputStream out = fs.create(Config.PATH_C0, true); // overwrite = true
+                out.writeBytes(String.valueOf(c0_Occurrences)); // write only the numeric value
+                out.close();
+                System.out.println("[INFO] Wrote C0 = " + c0_Occurrences + " to " + Config.PATH_C0);
+            }
+        }
     }
+
 
     /**
      * Partitioner class:
@@ -274,14 +276,6 @@ public class Step1 {
         // Set output path
         TextOutputFormat.setOutputPath(job, Config.OUTPUT_STEP_1);
 
-        boolean success = job.waitForCompletion(true);
-        if (success) {
-            FileSystem fs = FileSystem.get(new URI("s3://" + Config.BUCKET_NAME), conf);
-            long c0 = job.getCounters().findCounter(Reduce.Counters.c0_Occurrences).getValue();
-            FSDataOutputStream out = fs.create(Config.PATH_C0);
-            out.writeBytes("c0_value: " + c0 + "\n");
-            out.close();
-        }
 
         // Launch the job and exit based on its success
         System.exit(job.waitForCompletion(true) ? 0 : 1);
