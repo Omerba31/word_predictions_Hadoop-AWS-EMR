@@ -9,13 +9,13 @@ Step 1:
         Reduce input records= 334498126
 		Map output bytes=7516937342
 
-Step 2:
+Step 2: // No use of combiner
     Without local aggregation
         Map output records=2958006
         Reduce input records= 2958006
         Map output bytes=92485021
 
-Step 3:
+Step 3: // No use of combiner
     Without local aggregation
         Map output records=196095
         Reduce input records= 196095

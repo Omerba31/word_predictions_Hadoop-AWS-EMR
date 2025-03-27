@@ -2,14 +2,14 @@ Full Data:
 
     Unlimited mappers:
         Step 1: 7 mappers
-        Step 2: 11 mappers
-        Step 3: 11 mappers
+        Step 2: 11 mappers // =6, doesn't matter - the max is 6 (6 core + 1 primary)
+        Step 3: 11 mappers // =6, doesn't matter - the max is 6 (6 core + 1 primary)
 
         total elapsed time: ~7 min
 
     Limited mappers:
-        Step 1: 71 mappers
-        Step 2: 11 mappers
-        Step 3: 11 mappers
+        Step 1: 4 mappers
+        Step 2: 11 mappers // =6, doesn't matter - the max is 6 (6 core + 1 primary)
+        Step 3: 11 mappers // =6, doesn't matter - the max is 6 (6 core + 1 primary)
 
-        total elapsed time: ~9 min
+        total elapsed time: ~14 min
