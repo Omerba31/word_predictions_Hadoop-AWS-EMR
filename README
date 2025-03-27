@@ -1,0 +1,56 @@
+README
+
+Names and IDs:
+- Omer Ben Arie 211602842
+- Shahaf Kita
+
+Project Overview:
+This project is a 3-step MapReduce pipeline using AWS EMR to compute interpolated probabilities of Hebrew trigrams (3-grams), based on Google's NGram datasets. The system calculates the likelihood of a word occurring given the two preceding words, using a backoff model with weights.
+
+How to Run the Project:
+
+1. Make sure AWS credentials are configured properly using the AWS CLI or ~/.aws/credentials file.
+2. Ensure that the `vockey` EC2 key pair exists in your AWS region.
+3. Upload the JARs (Step1.jar, Step2.jar, Step3.jar) to the following S3 bucket:
+   s3://YOUR-BUCKET(config)/jars/
+4. Compile and run the Main.java to submit the EMR job:
+	- mvn clean package
+ 	- mvn exec:java -Dexec.mainClass="Main"    
+
+   This will:
+   - Launch an EMR cluster with 7 instances.
+   - Run the three MapReduce steps.
+   - Write logs to: s3://YOUR-BUCKET(config)/logs/
+   - Output data to: s3://YOUR-BUCKET(config)/output/
+
+Project Files Included in Zip:
+1. Source Code Files:
+   - Config.java
+   - Main.java
+   - Step1.java
+   - Step2.java
+   - Step3.java
+
+2. Reports:
+   - KV
+   - Interesting word pairs.docx
+   - Scalability
+   - Final Output
+
+3. Outputs:
+   - dir: Step1
+   - dir: Step2
+   - dir: Step3
+
+Notes:
+- The project uses EMR version emr-5.11.0.
+- Hadoop version: 3.4.1
+- Input Data:
+   s3://datasets.elasticmapreduce/ngrams/books/20090715/heb-all/
+
+- Output Data:
+   - Trigram probabilities, sorted by context and descending probability.
+   - File C0.txt in s3://dsp-02-bucket/vars/ stores the total count of valid 1-gram occurrences.
+   - Reports
+   - All steps Outputs
+

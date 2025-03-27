@@ -261,8 +261,9 @@ public class Step1 {
         SequenceFileInputFormat.addInputPath(job, Config.PATH_2_GRAM);
         SequenceFileInputFormat.addInputPath(job, Config.PATH_3_GRAM);
 
-        //Set split size to 128 MB (in bytes)
-        long splitSize = 134217728L; // 128 * 1024 * 1024
+//        long splitSize = 818089920L; // Set Split size to ~780MB -> 6 mappers
+        long splitSize = 1673031246L; // Set Split size to ~1.56GB -> 3 mappers
+
         job.getConfiguration().setLong("mapreduce.input.fileinputformat.split.maxsize", splitSize);
         job.getConfiguration().setLong("mapreduce.input.fileinputformat.split.minsize", splitSize);
 
