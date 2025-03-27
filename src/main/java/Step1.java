@@ -14,8 +14,6 @@ import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.FSDataOutputStream;
 import java.net.URI;
 
-
-
 import java.io.OutputStream;
 import java.io.IOException;
 import java.net.URISyntaxException;
@@ -126,7 +124,6 @@ public class Step1 {
     public static class Reduce extends Reducer<Text, IntWritable, Text, Text> {
         private long c0_Occurrences = 0L;
 
-
         private int c1_Occurrences = 0;
         private int n2_Occurrences = 0;
         private int n3_Occurrences = 0;
@@ -173,7 +170,6 @@ public class Step1 {
 
                 for (IntWritable value : values) n3_Occurrences += value.get();
 
-
                 if (keyWords[2].equals("**")) {
                     newKey = new Text(keyWords[0] + " " + keyWords[1]); // N2_Key
 
@@ -190,14 +186,6 @@ public class Step1 {
 
                     context.write(newKey, newValue);
                 }
-            }
-        }
-
-
-        private void saveToS3(Context context, int value, Path path) throws IOException {
-            FileSystem fs = FileSystem.get(context.getConfiguration());
-            try (OutputStream out = fs.create(path, true)) {
-                out.write(Long.toString(value).getBytes());
             }
         }
 
@@ -273,9 +261,13 @@ public class Step1 {
         SequenceFileInputFormat.addInputPath(job, Config.PATH_2_GRAM);
         SequenceFileInputFormat.addInputPath(job, Config.PATH_3_GRAM);
 
+        //Set split size to 128 MB (in bytes)
+        long splitSize = 134217728L; // 128 * 1024 * 1024
+        job.getConfiguration().setLong("mapreduce.input.fileinputformat.split.maxsize", splitSize);
+        job.getConfiguration().setLong("mapreduce.input.fileinputformat.split.minsize", splitSize);
+
         // Set output path
         TextOutputFormat.setOutputPath(job, Config.OUTPUT_STEP_1);
-
 
         // Launch the job and exit based on its success
         System.exit(job.waitForCompletion(true) ? 0 : 1);

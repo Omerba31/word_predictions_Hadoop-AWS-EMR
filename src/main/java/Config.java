@@ -2,7 +2,7 @@ import com.amazonaws.services.s3.model.ObjectListing;
 import org.apache.hadoop.fs.Path;
 
 public class Config {
-    public static final String BUCKET_NAME = "dsp-02-bucket-shahaf";
+    public static final String BUCKET_NAME = "dsp-02-bucket";
     public static final String REGION = "us-east-1";
     public static final String LOGS = "s3://" + BUCKET_NAME + "/logs";
 
